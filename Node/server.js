@@ -13,8 +13,8 @@ app.use(bodyParser.urlencoded({ extended: true })); // ✅ 추가
 const db = mysql.createConnection({
     host: 'localhost',   // DB 주소
     user: 'root',        // MySQL 계정
-    password: '2316',        // 비밀번호
-    database: 'networktest'
+    password: '1234',        // 비밀번호
+    database: 'test'
 });
 
 db.connect(err => {
