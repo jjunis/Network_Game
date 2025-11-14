@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 using TMPro;
 using System.Collections;
+using UnityEngine.SceneManagement;
 
 public class LoginManager : MonoBehaviour
 {
@@ -9,7 +10,7 @@ public class LoginManager : MonoBehaviour
     public TMP_InputField passwordInput;
     public TMP_Text resultText;
 
-    string serverUrl = "http://localhost:3000"; // Node 서버 주소
+    string serverUrl = "http://localhost:3000";
 
     public void OnRegisterClick()
     {
@@ -43,7 +44,14 @@ public class LoginManager : MonoBehaviour
         using (UnityWebRequest www = UnityWebRequest.Post(serverUrl + "/login", form))
         {
             yield return www.SendWebRequest();
-            resultText.text = www.downloadHandler.text;
+            string result = www.downloadHandler.text;
+            resultText.text = result;
+
+            // 로그인 성공 시 씬 전환
+            if (result.Contains("\"success\":true"))
+            {
+                SceneManager.LoadScene("LobbyScene"); // ← 바꾸고 싶은 씬 이름
+            }
         }
     }
 }
