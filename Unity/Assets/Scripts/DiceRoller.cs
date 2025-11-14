@@ -65,8 +65,7 @@ public class DiceReader : MonoBehaviour
 
             int number = GetTopNumber();
             Debug.Log("🎲 윗면 숫자 : " + number);
-            if (playerToken != null)
-                playerToken.MoveSteps(number);
+            if (playerToken != null) ;
         }
     }
 

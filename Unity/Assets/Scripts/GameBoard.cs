@@ -19,6 +19,6 @@ public class GameBoard : MonoBehaviour
     {
         if (index < 0) index = 0;
         if (index >= boardSpaces.Count) index = boardSpaces.Count - 1;
-        return boardSpaces[index].position + Vector3.up * 0.7f; // Ä­ À§·Î ¶ç¿ì±â
+        return boardSpaces[index].position + Vector3.up * 0.7f;
     }
 }
