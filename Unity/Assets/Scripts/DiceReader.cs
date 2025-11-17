@@ -10,14 +10,15 @@ public class DiceReader : MonoBehaviour
     public Transform right;     //3
 
     private Rigidbody rb;
-    private bool isRolling = false;
-    public PlayerToken playerToken;
+    public bool isRolling = false;
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
     }
 
+    // 아래 Update() 함수 전체를 주석 처리
+    /*
     void Update()
     {
         // 스페이스 누르면 주사위 굴림
@@ -26,11 +27,12 @@ public class DiceReader : MonoBehaviour
             RollDice();
         }
     }
+    */
 
     // ============================
     //      주사위를 굴리는 함수
     // ============================
-    void RollDice()
+    public void RollDice()
     {
         if (isRolling) return;
         isRolling = true;
@@ -65,7 +67,6 @@ public class DiceReader : MonoBehaviour
 
             int number = GetTopNumber();
             Debug.Log("🎲 윗면 숫자 : " + number);
-            if (playerToken != null) ;
         }
     }
 
@@ -82,9 +83,7 @@ public class DiceReader : MonoBehaviour
 
         for (int i = 0; i < faces.Length; i++)
         {
-            // 각 면의 Normal 방향(Z+)
             Vector3 dir = faces[i].transform.forward;
-
             float dot = Vector3.Dot(dir, up);
 
             if (dot > maxDot)

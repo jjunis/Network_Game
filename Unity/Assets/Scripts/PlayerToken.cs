@@ -8,10 +8,8 @@ public class PlayerToken : MonoBehaviour
     public float moveSpeed = 5.0f;
     public string playerName = "플레이어";
     public bool isEliminated = false;
-
     public System.Action OnWin;
 
-    // 콜백 버전 이동 (턴 처리용)
     public IEnumerator MoveStepsWithCallback(int stepCount, System.Action onFinish)
     {
         if (isEliminated) { onFinish?.Invoke(); yield break; }

@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -7,18 +7,21 @@ public class BossToken : MonoBehaviour
     public GameBoard gameBoard;
     public int currentIndex = 0;
     public float moveSpeed = 5.0f;
+    private List<PlayerToken> playersRef;
 
-    // ¹İµå½Ã ÀÌ·¸°Ô È£Ãâ (ÄÚ·çÆ¾)
     public IEnumerator MoveStepsWithCallback(int stepCount, List<PlayerToken> players, System.Action onFinish)
     {
-        yield return StartCoroutine(MoveRoutine(stepCount, players));
+        playersRef = players;
+        yield return StartCoroutine(MoveRoutine(stepCount));
         onFinish?.Invoke();
     }
 
-    private IEnumerator MoveRoutine(int stepCount, List<PlayerToken> players)
+    private IEnumerator MoveRoutine(int stepCount)
     {
         int targetIndex = currentIndex + stepCount;
         targetIndex %= gameBoard.boardSpaces.Count;
+
+        Debug.Log($"ğŸ”´ ë³´ìŠ¤ ì‹œì‘: {currentIndex} â†’ ëª©í‘œ: {targetIndex} (ì£¼ì‚¬ìœ„: {stepCount})");
 
         while (currentIndex != targetIndex)
         {
@@ -35,14 +38,19 @@ public class BossToken : MonoBehaviour
             }
             currentIndex = nextIndex;
 
-            // º¸½º Ä­°ú °°Àº Ä­ÀÎ ÇÃ·¹ÀÌ¾î Å»¶ô Ã³¸®
-            foreach (var player in players)
+            Debug.Log($"ë³´ìŠ¤ í˜„ì¬: {currentIndex}");
+
+            // í”Œë ˆì´ì–´ ì¡ê¸° ì²´í¬
+            foreach (var player in playersRef)
             {
                 if (!player.isEliminated && player.currentIndex == currentIndex)
                 {
                     player.Eliminate();
+                    Debug.Log($"âš ï¸ ë³´ìŠ¤ê°€ {player.playerName}ë¥¼ ì¡ì•˜ìŠµë‹ˆë‹¤!");
                 }
             }
         }
+
+        Debug.Log($"ğŸ”´ ë³´ìŠ¤ ì™„ë£Œ: {currentIndex}");
     }
 }
