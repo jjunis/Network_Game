@@ -38,7 +38,10 @@ public class LoginManager : MonoBehaviour
     IEnumerator Login()
     {
         WWWForm form = new WWWForm();
-        form.AddField("username", usernameInput.text);
+        // 사용자가 입력한 아이디를 변수에 담아둠
+        string currentID = usernameInput.text;
+
+        form.AddField("username", currentID);
         form.AddField("password", passwordInput.text);
 
         using (UnityWebRequest www = UnityWebRequest.Post(serverUrl + "/login", form))
@@ -47,10 +50,13 @@ public class LoginManager : MonoBehaviour
             string result = www.downloadHandler.text;
             resultText.text = result;
 
-            // 로그인 성공 시 씬 전환
             if (result.Contains("\"success\":true"))
             {
-                SceneManager.LoadScene("LobbyScene"); // ← 바꾸고 싶은 씬 이름
+                // ★ 수정된 부분: 로그인 성공하면 아이디를 LobbyUI의 변수에 저장!
+                // (LobbyUI 스크립트에 MyNickName 변수가 static으로 있어서 접근 가능함)
+                LobbyUI.MyNickName = currentID;
+
+                SceneManager.LoadScene("LobbyScene");
             }
         }
     }
