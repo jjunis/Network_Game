@@ -19,7 +19,7 @@ public class RoomInfoDisplay : MonoBehaviour
         }
         else
         {
-            infoText.text = $" 현재 방: {room}\n 내 이름: {nick}";
+            infoText.text = $" 현재 방: {room}\n 플레이어 이름: {nick}";
             Debug.Log($"[게임시작] 방: {room}, 닉네임: {nick}");
         }
     }
