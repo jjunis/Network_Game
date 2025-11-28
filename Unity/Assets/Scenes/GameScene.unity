@@ -3627,7 +3627,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameBoard: {fileID: 1742239833}
-  currentIndex: 0
+  currentIndex: 40
   moveSpeed: 5
   playerName: "\uD50C\uB808\uC774\uC5B4"
   isEliminated: 0
@@ -5604,7 +5604,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameBoard: {fileID: 1742239833}
-  currentIndex: 0
+  currentIndex: 10
   moveSpeed: 5
   playerName: "\uD50C\uB808\uC774\uC5B4"
   isEliminated: 0

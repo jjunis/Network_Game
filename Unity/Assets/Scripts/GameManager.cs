@@ -16,6 +16,7 @@ public class GameManager : MonoBehaviour
     private bool isWaitingForDice = true;
     private bool bossActive = false;
     private int bossActivationThreshold = 15;
+    private bool gameOver = false;
 
     private void Start()
     {
@@ -30,6 +31,8 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
+        if (gameOver) return;
+
         if (isWaitingForDice && Input.GetKeyDown(KeyCode.Space))
         {
             object current = turnOrder[currentTurnIndex];
@@ -92,7 +95,9 @@ public class GameManager : MonoBehaviour
             NextTurn();
             isWaitingForDice = true;
 
-            // ✅ 다음 턴이 보스이면 자동으로 보스 턴 처리
+            // ✅ 게임이 종료되었는지 확인
+            if (gameOver) yield break;
+
             if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is BossToken && bossActive)
             {
                 yield return new WaitForSeconds(0.5f);
@@ -105,7 +110,6 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    // ✅ 보스 턴 자동 처리 (별도 코루틴)
     IEnumerator ProcessBossTurn()
     {
         isWaitingForDice = false;
@@ -113,7 +117,6 @@ public class GameManager : MonoBehaviour
         infoText.text = "보스가 주사위를 굴리는 중...";
         yield return new WaitForSeconds(1f);
 
-        // 보스 자동 주사위 굴림
         diceReader.RollDice();
         yield return new WaitUntil(() => !diceReader.isRolling);
         yield return new WaitForSeconds(0.5f);
@@ -129,14 +132,25 @@ public class GameManager : MonoBehaviour
 
         Debug.Log($"보스 이동 완료: {boss.currentIndex}칸");
 
+        // 보스 이동 후 모든 플레이어 탈락 확인
+        int alive = 0;
+        foreach (var p in players)
+        {
+            if (!p.isEliminated) alive++;
+        }
+        if (alive == 0)
+        {
+            infoText.text = "🎮 보스가 모든 플레이어를 잡았습니다! 게임 오버!";
+            gameOver = true;
+            yield break;
+        }
+
         NextTurn();
         isWaitingForDice = true;
 
-        // ✅ 다음이 플레이어면 플레이어 턴 정보 표시
         UpdateNextTurnDisplay();
     }
 
-    // ✅ 다음 턴 정보 표시 함수
     void UpdateNextTurnDisplay()
     {
         if (currentTurnIndex < turnOrder.Count)
@@ -185,7 +199,6 @@ public class GameManager : MonoBehaviour
         if (currentTurnIndex >= turnOrder.Count)
             currentTurnIndex = 0;
 
-        // 탈락한 플레이어는 자동으로 턴 스킵
         while (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is PlayerToken)
         {
             PlayerToken player = (PlayerToken)turnOrder[currentTurnIndex];
@@ -200,22 +213,13 @@ public class GameManager : MonoBehaviour
                 break;
             }
         }
-
-        // 남은 플레이어 확인
-        int alive = 0;
-        foreach (var p in players)
-        {
-            if (!p.isEliminated) alive++;
-        }
-        if (alive == 0)
-        {
-            infoText.text = "플레이어 전원 탈락! 게임 오버!";
-        }
     }
 
+    // ✅ 플레이어가 시작점(0칸)에 도달했을 때 호출
     void OnPlayerWin()
     {
-        infoText.text = "승리! 게임 종료!";
+        infoText.text = "🎉 플레이어가 시작점에 도달했습니다! 게임 종료!";
+        gameOver = true;
+        Debug.Log("게임 종료: 플레이어 승리!");
     }
 }
-

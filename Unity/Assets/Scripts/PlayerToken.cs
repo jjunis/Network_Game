@@ -10,11 +10,14 @@ public class PlayerToken : MonoBehaviour
     public bool isEliminated = false;
     public System.Action OnWin;
 
+    private bool hasWon = false;  // ? 이미 승리했는지 확인
+
     public IEnumerator MoveStepsWithCallback(int stepCount, System.Action onFinish)
     {
         if (isEliminated) { onFinish?.Invoke(); yield break; }
+        if (hasWon) { onFinish?.Invoke(); yield break; }  // ? 이미 승리했으면 움직이지 않음
+
         yield return StartCoroutine(MoveRoutine(stepCount));
-        if (currentIndex == 0) OnWin?.Invoke();
         onFinish?.Invoke();
     }
 
@@ -25,6 +28,14 @@ public class PlayerToken : MonoBehaviour
 
         while (currentIndex != targetIndex)
         {
+            // ? 0칸에 도달했는지 매번 확인
+            if (currentIndex == 0 && !hasWon)
+            {
+                hasWon = true;
+                OnWin?.Invoke();
+                yield break;  // 이동 중단
+            }
+
             int nextIndex = (currentIndex + 1) % gameBoard.boardSpaces.Count;
             Vector3 targetPos = gameBoard.GetSpacePosition(nextIndex);
 
@@ -37,6 +48,14 @@ public class PlayerToken : MonoBehaviour
                 yield return null;
             }
             currentIndex = nextIndex;
+
+            // ? 0칸에 도달했는지 다시 확인
+            if (currentIndex == 0 && !hasWon)
+            {
+                hasWon = true;
+                OnWin?.Invoke();
+                yield break;  // 이동 중단
+            }
         }
     }
 
