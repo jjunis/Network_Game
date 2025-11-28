@@ -42,16 +42,10 @@ public class GameManager : MonoBehaviour
                     infoText.text = $"{player.playerName}는 탈락했습니다!";
                     return;
                 }
-            }
 
-            if (current is BossToken && !bossActive)
-            {
-                infoText.text = "아직 보스가 나타나지 않았습니다!";
-                return;
+                diceReader.RollDice();
+                StartCoroutine(WaitForDiceResult());
             }
-
-            diceReader.RollDice();
-            StartCoroutine(WaitForDiceResult());
         }
     }
 
@@ -62,7 +56,6 @@ public class GameManager : MonoBehaviour
         yield return new WaitUntil(() => !diceReader.isRolling);
         yield return new WaitForSeconds(0.5f);
 
-        // ✅ 플레이어든 보스든 같은 주사위 값 사용
         int diceValue = diceReader.GetTopNumber();
         Debug.Log("주사위 결과: " + diceValue);
 
@@ -86,32 +79,66 @@ public class GameManager : MonoBehaviour
                 yield return new WaitUntil(() => moveFinished);
                 yield return new WaitForSeconds(0.5f);
 
-                // 플레이어가 15칸을 지나갔는지 확인
-                if (player.currentIndex >= bossActivationThreshold && !bossActive)
+                if (!bossActive && AllPlayersPassedThreshold())
                 {
                     bossActive = true;
                     turnOrder.Add(boss);
-                    infoText.text = "⚠️ 보스가 나타났습니다!";
+                    infoText.text = "⚠️ 모든 플레이어가 15칸을 지났습니다! 보스가 나타났습니다!";
+                    Debug.Log("보스 활성화됨!");
                     yield return new WaitForSeconds(1f);
                 }
             }
-        }
-        else if (current is BossToken)
-        {
-            // ✅ 보스도 diceValue를 그대로 사용 (Random 제거)
-            if (bossActive)
+
+            NextTurn();
+            isWaitingForDice = true;
+
+            // ✅ 다음 턴이 보스이면 자동으로 보스 턴 처리
+            if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is BossToken && bossActive)
             {
-                infoText.text = $"보스의 턴! 주사위: {diceValue}";
-                bool moveFinished = false;
-                yield return StartCoroutine(boss.MoveStepsWithCallback(diceValue, players, () => moveFinished = true));
-                yield return new WaitUntil(() => moveFinished);
                 yield return new WaitForSeconds(0.5f);
+                StartCoroutine(ProcessBossTurn());
+            }
+            else
+            {
+                UpdateNextTurnDisplay();
             }
         }
+    }
+
+    // ✅ 보스 턴 자동 처리 (별도 코루틴)
+    IEnumerator ProcessBossTurn()
+    {
+        isWaitingForDice = false;
+
+        infoText.text = "보스가 주사위를 굴리는 중...";
+        yield return new WaitForSeconds(1f);
+
+        // 보스 자동 주사위 굴림
+        diceReader.RollDice();
+        yield return new WaitUntil(() => !diceReader.isRolling);
+        yield return new WaitForSeconds(0.5f);
+
+        int bossDiceValue = diceReader.GetTopNumber();
+        infoText.text = $"보스의 턴! 주사위: {bossDiceValue}";
+        Debug.Log($"보스 주사위: {bossDiceValue}");
+
+        bool moveFinished = false;
+        yield return StartCoroutine(boss.MoveStepsWithCallback(bossDiceValue, players, () => moveFinished = true));
+        yield return new WaitUntil(() => moveFinished);
+        yield return new WaitForSeconds(0.5f);
+
+        Debug.Log($"보스 이동 완료: {boss.currentIndex}칸");
 
         NextTurn();
         isWaitingForDice = true;
 
+        // ✅ 다음이 플레이어면 플레이어 턴 정보 표시
+        UpdateNextTurnDisplay();
+    }
+
+    // ✅ 다음 턴 정보 표시 함수
+    void UpdateNextTurnDisplay()
+    {
         if (currentTurnIndex < turnOrder.Count)
         {
             object nextTurn = turnOrder[currentTurnIndex];
@@ -120,7 +147,7 @@ public class GameManager : MonoBehaviour
                 PlayerToken nextPlayer = (PlayerToken)nextTurn;
                 if (nextPlayer.isEliminated)
                 {
-                    infoText.text = $"{nextPlayer.playerName}는 탈락했습니다! 다음 턴으로 넘어갑니다...";
+                    infoText.text = $"{nextPlayer.playerName}는 탈락했습니다!";
                 }
                 else
                 {
@@ -131,14 +158,24 @@ public class GameManager : MonoBehaviour
             {
                 if (bossActive)
                 {
-                    infoText.text = "보스의 턴! 주사위를 굴려주세요.";
-                }
-                else
-                {
-                    infoText.text = "아직 보스가 나타나지 않았습니다!";
+                    infoText.text = "보스의 턴! (자동 진행 중...)";
                 }
             }
         }
+    }
+
+    bool AllPlayersPassedThreshold()
+    {
+        foreach (var player in players)
+        {
+            if (!player.isEliminated && player.currentIndex < bossActivationThreshold)
+            {
+                Debug.Log($"{player.playerName}는 아직 {player.currentIndex}칸 (15칸 미만)");
+                return false;
+            }
+        }
+        Debug.Log("모든 플레이어가 15칸 이상을 지났습니다!");
+        return true;
     }
 
     void NextTurn()
@@ -148,6 +185,7 @@ public class GameManager : MonoBehaviour
         if (currentTurnIndex >= turnOrder.Count)
             currentTurnIndex = 0;
 
+        // 탈락한 플레이어는 자동으로 턴 스킵
         while (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is PlayerToken)
         {
             PlayerToken player = (PlayerToken)turnOrder[currentTurnIndex];
@@ -163,6 +201,7 @@ public class GameManager : MonoBehaviour
             }
         }
 
+        // 남은 플레이어 확인
         int alive = 0;
         foreach (var p in players)
         {
@@ -179,3 +218,4 @@ public class GameManager : MonoBehaviour
         infoText.text = "승리! 게임 종료!";
     }
 }
+
