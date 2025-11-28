@@ -77,8 +77,11 @@ app.post('/create_room', (req, res) => {
     if (rooms[roomName]) {
         res.json({ success: false, message: "이미 있는 방입니다." });
     } else {
-        rooms[roomName] = []; 
-        rooms[roomName].push(nickName);
+        // ★ 새로운 구조: players 배열 안에 nick, isReady, isHost 정보 저장
+        rooms[roomName] = {
+            state: 'waiting',
+            players: [{ nick: nickName, isReady: true, isHost: true }] // 방장은 생성과 동시에 준비 상태
+        };
         res.json({ success: true, message: "방 생성 완료" });
     }
 });
@@ -88,10 +91,13 @@ app.post('/join_room', (req, res) => {
     const { roomName, nickName } = req.body;
     if (!rooms[roomName]) {
         res.json({ success: false, message: "없는 방입니다." });
-    } else if (rooms[roomName].length >= 3) {
+    } else if (rooms[roomName].players.length >= 3) {
         res.json({ success: false, message: "방이 꽉 찼습니다." });
+    } else if (rooms[roomName].state !== 'waiting') {
+        res.json({ success: false, message: "게임이 시작된 방입니다." });
     } else {
-        rooms[roomName].push(nickName);
+        // ★ 새로운 구조: 일반 플레이어로 추가
+        rooms[roomName].players.push({ nick: nickName, isReady: false, isHost: false });
         res.json({ success: true, message: "입장 성공" });
     }
 });
@@ -140,3 +146,62 @@ setInterval(() => {
         }
     }
 }, 2000); // 2초마다 실행
+
+// 6. 플레이어 목록 가져오기 (GET) - 대기실 UI 갱신용
+app.get('/room_players', (req, res) => {
+    const { roomName } = req.query;
+
+    if (!rooms[roomName]) {
+        return res.json([]);
+    }
+    
+    // Unity 클라이언트가 원하는 JSON 구조 [{nickName: 'A', isReady: true}, ...]로 변환
+    const playersForUnity = rooms[roomName].players.map(p => ({
+        nickName: p.nick, 
+        isReady: p.isReady
+    }));
+
+    res.json(playersForUnity);
+});
+
+// 7. 준비 상태 토글 (POST)
+app.post('/toggle_ready', (req, res) => {
+    const { roomName, nickName, isReady } = req.body;
+
+    if (!rooms[roomName]) {
+        return res.json({ success: false, message: "방이 없습니다." });
+    }
+
+    const player = rooms[roomName].players.find(p => p.nick === nickName);
+
+    if (player && !player.isHost) { // 방장이 아닌 경우에만 준비 상태 변경 허용
+        player.isReady = isReady;
+        return res.json({ success: true, message: "준비 상태 갱신" });
+    }
+    
+    return res.json({ success: false, message: "플레이어를 찾을 수 없거나 방장입니다." });
+});
+
+
+// 8. 게임 시작 요청 (POST) - 호스트 전용
+app.post('/start_game', (req, res) => {
+    const { roomName } = req.body;
+
+    if (!rooms[roomName] || rooms[roomName].state !== 'waiting') {
+        return res.json({ success: false, message: "방이 없거나 이미 시작됨." });
+    }
+
+    const players = rooms[roomName].players;
+    const isFull = players.length === 3;
+    const allReady = players.every(p => p.isReady); // 방장은 isReady: true로 설정했으므로 모두 검사
+
+    if (isFull && allReady) {
+        rooms[roomName].state = 'playing'; // 방 상태를 '게임 중'으로 변경
+        
+        // ★ 실제 서버라면 여기서 모든 클라이언트에게 웹소켓으로 '게임 시작' 신호를 보냅니다.
+        console.log(`🚀 [GAME START] Room: ${roomName}`);
+        return res.json({ success: true, message: "게임 시작!" });
+    } else {
+        return res.json({ success: false, message: "인원이 부족하거나 모두 준비되지 않음." });
+    }
+});
