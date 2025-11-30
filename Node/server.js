@@ -8,13 +8,13 @@ const app = express();
 app.use(cors());
 
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true })); // ✅ 추가
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // ✅ MySQL 연결
 const db = mysql.createConnection({
     host: 'localhost',   // DB 주소
     user: 'root',        // MySQL 계정
-    password: '1234',        // 비밀번호
+    password: '1234',        // 비밀번호 (잠깐 수정함)
     database: 'test'
 });
 
@@ -66,7 +66,7 @@ let rooms = {};
 app.get('/room_list', (req, res) => {
     let roomData = [];
     for(let key in rooms) {
-        roomData.push({ name: key, count: rooms[key].length });
+        roomData.push({ name: key, count: rooms[key].players.length });
     }
     res.json(roomData);
 });
@@ -123,25 +123,27 @@ app.post('/ping', (req, res) => {
 setInterval(() => {
     const now = Date.now();
     
-    // 모든 방을 검사
     for (let roomName in rooms) {
-        let users = rooms[roomName];
+        // ★ 수정: room 변수는 이제 배열이 아니라 객체임
+        let room = rooms[roomName];       
+        let players = room.players; // 실제 플레이어 배열
 
         // 방에 있는 유저들을 뒤에서부터 검사 (삭제 시 인덱스 꼬임 방지)
-        for (let i = users.length - 1; i >= 0; i--) {
-            let nick = users[i];
+        for (let i = players.length - 1; i >= 0; i--) {
+            let p = players[i]; // p는 객체 { nick: '...', ... }
+            let nick = p.nick;  // ★ 수정: 객체 안의 nick을 꺼내야 함
             
             // 마지막 신호가 4초 이상 지났으면 -> 사망 처리
             if (!lastHeartbeat[nick] || (now - lastHeartbeat[nick] > 4000)) {
-                console.log(`💀 [유저 삭제] ${nick} (응답 없음)`);
-                users.splice(i, 1); // 방에서 내보냄
-                delete lastHeartbeat[nick]; // 장부에서 지움
+                console.log(`💀 [삭제] ${nick}`);
+                players.splice(i, 1);
+                delete lastHeartbeat[nick];
             }
         }
 
         // 유저 다 나가서 방 비었으면 -> 방 삭제
-        if (users.length === 0) {
-            console.log(`🗑 [방 삭제] ${roomName} (빈 방)`);
+        if (players.length === 0) {
+            console.log(`🗑 [방 폭파] ${roomName}`);
             delete rooms[roomName];
         }
     }
@@ -152,7 +154,7 @@ app.get('/room_players', (req, res) => {
     const { roomName } = req.query;
 
     if (!rooms[roomName]) {
-        return res.json([]);
+        return res.json({ isStarted: false, players: [] });
     }
     
     // Unity 클라이언트가 원하는 JSON 구조 [{nickName: 'A', isReady: true}, ...]로 변환
@@ -161,7 +163,12 @@ app.get('/room_players', (req, res) => {
         isReady: p.isReady
     }));
 
-    res.json(playersForUnity);
+    const isGameStarted = (rooms[roomName].state === 'playing');
+
+    res.json({
+        isStarted: isGameStarted,
+        players: playersForUnity
+    });
 });
 
 // 7. 준비 상태 토글 (POST)

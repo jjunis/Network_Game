@@ -7,55 +7,51 @@ using UnityEngine.SceneManagement;
 using TMPro;
 using System;
 
-// ★ 이름 충돌 방지용 데이터 구조체 (기존 파일과의 충돌을 피하기 위해 필수)
 [System.Serializable]
 public class PlayerInfoData
 {
     public string nickName;
     public bool isReady;
 }
+
 [System.Serializable]
-public class PlayerInfoDataWrapper { public PlayerInfoData[] players; }
+public class PlayerInfoDataWrapper
+{
+    public PlayerInfoData[] players;
+    public bool isStarted;
+}
 
-
-// ★ 클래스 이름 유지: LobbyUI
 public class LobbyUI : MonoBehaviour
 {
-    // ★ 씬 상수 및 URL
     private const string GameSceneName = "GameScene";
     private const int MAX_PLAYERS = 3;
     private string serverUrl = "http://localhost:3000";
 
-    // ★ 전역 상태 변수
     public static string CurrentRoomName;
     public static string MyNickName;
     public static bool IsHost = false;
     private bool isPlayerReady = false;
-    private PlayerInfoData[] currentPlayers; // 서버 응답 저장을 위해 필요
-
-    // --- UI 연결 변수 (기존 LobbyUI + WaitingRoomManager 통합) ---
+    private PlayerInfoData[] currentPlayers;
 
     [Header("--- 1. 씬 패널 관리 ---")]
-    public GameObject lobbyPanel;      // 로비 전체 UI (방 목록 포함)
-    public GameObject waitingRoomPanel; // 대기실 전체 UI (플레이어 목록 포함)
-    public GameObject createRoomPanel;  // 방 만들기 입력 패널
+    public GameObject lobbyPanel;
+    public GameObject waitingRoomPanel;
+    public GameObject createRoomPanel;
 
     [Header("--- 2. 로비 UI 연결 ---")]
-    public TMP_InputField roomNameInput; // 방 이름 입력창
-    public Transform contentParent;     // 방 목록 Scroll View Content
-    public GameObject roomItemPrefab;    // 방 목록 아이템 프리팹
+    public TMP_InputField roomNameInput;
+    public Transform contentParent;
+    public GameObject roomItemPrefab;
 
     [Header("--- 3. 대기실 UI 연결 ---")]
-    public TMP_Text roomNameText_WR;        // 대기실의 방 이름 텍스트
-    public Button startGameButton;        // 호스트 전용 게임 시작 버튼
-    public Transform playerListParent;     // 플레이어 목록 표시 부모
-    public GameObject playerItemPrefab;     // 플레이어 아이템 프리팹
-    public Button readyButton;            // 일반 플레이어 준비 버튼
-
+    public TMP_Text roomNameText_WR;
+    public Button startGameButton;
+    public Transform playerListParent;
+    public GameObject playerItemPrefab;
+    public Button readyButton;
 
     void Start()
     {
-        // UI 초기 상태 설정
         lobbyPanel.SetActive(true);
         waitingRoomPanel.SetActive(false);
         createRoomPanel.SetActive(false);
@@ -63,12 +59,9 @@ public class LobbyUI : MonoBehaviour
         if (startGameButton != null) startGameButton.onClick.RemoveAllListeners();
         if (readyButton != null) readyButton.onClick.RemoveAllListeners();
 
-        // 주기적인 방 목록 갱신 시작 (★AutoRefreshRoomList 함수로 변경)
         Debug.Log("🚀 로비 진입: 방 목록 자동 갱신 시작");
         StartCoroutine(AutoRefreshRoomList(5.0f));
     }
-
-    // --- 로비 UI 버튼 연결 함수 (기존 유지) ---
 
     public void OnClickCreateRoom() { createRoomPanel.SetActive(true); }
     public void OnClickClosePanel() { createRoomPanel.SetActive(false); }
@@ -82,13 +75,12 @@ public class LobbyUI : MonoBehaviour
 
     public void OnClickRefresh()
     {
-        Debug.Log("🔄 새로고침 버튼 눌림 -> 서버 요청 시작");
         StartCoroutine(RequestRoomList());
     }
 
-    // **********************************
-    // 1. 서버 통신 및 UI 갱신 로직 (LobbyUI)
-    // **********************************
+    // =========================================================
+    // 1. 방 목록 로직 (Room List)
+    // =========================================================
 
     IEnumerator AutoRefreshRoomList(float interval)
     {
@@ -108,63 +100,6 @@ public class LobbyUI : MonoBehaviour
             if (www.result == UnityWebRequest.Result.Success)
             {
                 UpdateRoomListUI(www.downloadHandler.text);
-            }
-            else
-            {
-                Debug.LogError("❌ 서버 연결 실패: " + www.error);
-            }
-        }
-    }
-
-    IEnumerator RequestCreateRoom(string rName, string nick)
-    {
-        string json = "{\"roomName\":\"" + rName + "\", \"nickName\":\"" + nick + "\"}";
-        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/create_room", "POST"))
-        {
-            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
-            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-            www.downloadHandler = new DownloadHandlerBuffer();
-            www.SetRequestHeader("Content-Type", "application/json");
-
-            yield return www.SendWebRequest();
-
-            if (www.result == UnityWebRequest.Result.Success)
-            {
-                Debug.Log("✅ 방 생성 성공");
-                CurrentRoomName = rName;
-                IsHost = true;
-                // ★ 씬 전환 대신 대기실 UI 활성화
-                SwitchToWaitingRoomUI();
-            }
-            else
-            {
-                Debug.LogError("❌ 방 생성 실패: " + www.downloadHandler.text);
-            }
-        }
-    }
-
-    IEnumerator RequestJoinRoom(string rName, string nick)
-    {
-        string json = "{\"roomName\":\"" + rName + "\", \"nickName\":\"" + nick + "\"}";
-        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/join_room", "POST"))
-        {
-            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
-            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-            www.downloadHandler = new DownloadHandlerBuffer();
-            www.SetRequestHeader("Content-Type", "application/json");
-
-            yield return www.SendWebRequest();
-
-            if (www.downloadHandler.text.Contains("true"))
-            {
-                CurrentRoomName = rName;
-                IsHost = false;
-                // ★ 씬 전환 대신 대기실 UI 활성화
-                SwitchToWaitingRoomUI();
-            }
-            else
-            {
-                Debug.LogError("❌ 입장 실패: " + www.downloadHandler.text);
             }
         }
     }
@@ -197,6 +132,7 @@ public class LobbyUI : MonoBehaviour
                 }
 
                 GameObject item = Instantiate(roomItemPrefab, contentParent);
+
                 TMP_Text nameObj = item.transform.Find("RoomName").GetComponent<TMP_Text>();
                 TMP_Text countObj = item.transform.Find("UserCount").GetComponent<TMP_Text>();
 
@@ -209,28 +145,72 @@ public class LobbyUI : MonoBehaviour
                 });
             }
         }
-        catch (Exception e)
+        catch (Exception e) { Debug.LogError(e.Message); }
+    }
+
+    // =========================================================
+    // 2. 방 생성 및 입장 요청
+    // =========================================================
+
+    IEnumerator RequestCreateRoom(string rName, string nick)
+    {
+        string json = "{\"roomName\":\"" + rName + "\", \"nickName\":\"" + nick + "\"}";
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/create_room", "POST"))
         {
-            Debug.LogError("💥 파싱 중 에러 발생: " + e.Message);
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+
+            yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                CurrentRoomName = rName;
+                IsHost = true;
+                SwitchToWaitingRoomUI();
+            }
         }
     }
 
-    // **********************************
-    // 2. 대기실 전환 로직 (WaitingRoomManager 역할 통합)
-    // **********************************
+    IEnumerator RequestJoinRoom(string rName, string nick)
+    {
+        string json = "{\"roomName\":\"" + rName + "\", \"nickName\":\"" + nick + "\"}";
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/join_room", "POST"))
+        {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+
+            yield return www.SendWebRequest();
+
+            if (www.downloadHandler.text.Contains("true"))
+            {
+                CurrentRoomName = rName;
+                IsHost = false;
+                SwitchToWaitingRoomUI();
+            }
+        }
+    }
+
+    // =========================================================
+    // 3. 대기실 로직 (Player List) + ★ PING 추가됨
+    // =========================================================
 
     void SwitchToWaitingRoomUI()
     {
-        StopAllCoroutines(); // 로비 갱신 중지
+        StopAllCoroutines();
 
         lobbyPanel.SetActive(false);
         waitingRoomPanel.SetActive(true);
         roomNameText_WR.text = "Room: " + CurrentRoomName;
 
-        // 대기실 로직 시작 (주기적 플레이어 목록 갱신 시작)
-        StartCoroutine(AutoRefreshPlayerList(5.0f));
+        StartCoroutine(AutoRefreshPlayerList(1.0f));
 
-        // UI 초기 설정
+        // ★★★ [중요] 생존 신고(Ping) 시작! 이거 없어서 사라졌던 거임 ★★★
+        StartCoroutine(SendHeartbeat());
+
         if (IsHost)
         {
             readyButton.gameObject.SetActive(false);
@@ -246,6 +226,28 @@ public class LobbyUI : MonoBehaviour
             readyButton.onClick.AddListener(OnClickToggleReady);
             readyButton.gameObject.SetActive(true);
             isPlayerReady = false;
+        }
+    }
+
+    // ★ 1초마다 서버에 "나 살아있음" 신호 보내기
+    IEnumerator SendHeartbeat()
+    {
+        while (true)
+        {
+            // 방을 나갔거나 패널이 꺼지면 중단
+            if (!waitingRoomPanel.activeSelf) yield break;
+
+            string json = "{\"nickName\":\"" + MyNickName + "\"}";
+            using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/ping", "POST"))
+            {
+                byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+                www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                www.downloadHandler = new DownloadHandlerBuffer();
+                www.SetRequestHeader("Content-Type", "application/json");
+
+                yield return www.SendWebRequest();
+            }
+            yield return new WaitForSeconds(1.0f);
         }
     }
 
@@ -269,56 +271,94 @@ public class LobbyUI : MonoBehaviour
             {
                 UpdatePlayerListUI(www.downloadHandler.text);
             }
-            else
-            {
-                Debug.LogError("❌ 플레이어 목록 갱신 실패: " + www.error);
-            }
         }
     }
 
-    void UpdatePlayerListUI(string jsonPlayers)
+    void UpdatePlayerListUI(string jsonResponse)
     {
+        // 1. 기존 목록 초기화
         foreach (Transform child in playerListParent) Destroy(child.gameObject);
 
         PlayerInfoData[] playerInfos = null;
-        int currentPlayerCount = 0;
+        bool gameStarted = false;
         int readyCount = 0;
 
         try
         {
-            string wrappedJson = "{\"players\":" + jsonPlayers + "}";
-            playerInfos = JsonUtility.FromJson<PlayerInfoDataWrapper>(wrappedJson).players;
-
-            if (playerInfos != null)
+            PlayerInfoDataWrapper wrapper = JsonUtility.FromJson<PlayerInfoDataWrapper>(jsonResponse);
+            if (wrapper != null)
             {
-                currentPlayers = playerInfos;
-                currentPlayerCount = playerInfos.Length;
+                playerInfos = wrapper.players;
+                gameStarted = wrapper.isStarted;
             }
         }
-        catch (Exception e)
+        catch (Exception e) { Debug.LogWarning(e.Message); }
+
+        // 게임 시작 신호 처리
+        if (gameStarted)
         {
-            Debug.LogWarning("⚠️ JSON 파싱 경고: " + e.Message);
+            if (IsHost == false)
+            {
+                StartGamePlay();
+                return;
+            }
         }
 
         if (playerInfos != null)
         {
+            currentPlayers = playerInfos;
+
             foreach (var player in playerInfos)
             {
                 GameObject item = Instantiate(playerItemPrefab, playerListParent);
-                TMP_Text nameText = item.transform.Find("RoomName").GetComponent<TMP_Text>();
-                TMP_Text statusText = item.transform.Find("UserCount").GetComponent<TMP_Text>();
 
-                nameText.text = player.nickName;
-                statusText.text = player.isReady ? "준비 완료" : "미준비";
+                // 위치/크기 초기화
+                item.transform.localPosition = Vector3.zero;
+                item.transform.localScale = Vector3.one;
+
+                // ---------------------------------------------------------
+                // 1. 닉네임 설정 (오브젝트 이름: "Text")
+                // ---------------------------------------------------------
+                Transform nameObj = item.transform.Find("Text");
+                if (nameObj != null)
+                {
+                    nameObj.GetComponent<TMP_Text>().text = player.nickName;
+                }
+
+                // ---------------------------------------------------------
+                // 2. 준비 상태 설정 (오브젝트 이름: "Text (1)")
+                // ---------------------------------------------------------
+                Transform statusObj = item.transform.Find("Text (1)");
+                if (statusObj != null)
+                {
+                    TMP_Text tmpStatus = statusObj.GetComponent<TMP_Text>();
+
+                    if (player.isReady)
+                    {
+                        tmpStatus.text = "준비 완료";
+                        tmpStatus.color = Color.green; // 준비하면 초록색
+                    }
+                    else
+                    {
+                        tmpStatus.text = "대기 중";
+                        tmpStatus.color = Color.black; // 대기 중엔 검은색
+                    }
+                }
 
                 if (player.isReady) readyCount++;
             }
-        }
 
-        if (IsHost)
-        {
-            bool allReadyAndFull = (currentPlayerCount == MAX_PLAYERS) && (readyCount == MAX_PLAYERS);
-            startGameButton.interactable = allReadyAndFull;
+            // 방장 시작 버튼 활성화 (테스트용: 접속자 전원 준비 시 활성화)
+            if (IsHost)
+            {
+                bool isFull = (playerInfos.Length == MAX_PLAYERS);
+
+                bool allReady = (readyCount == playerInfos.Length);
+
+                startGameButton.interactable = (isFull && allReady);
+
+                startGameButton.gameObject.SetActive(isFull && allReady);
+            }
         }
     }
 
@@ -340,25 +380,12 @@ public class LobbyUI : MonoBehaviour
             www.SetRequestHeader("Content-Type", "application/json");
 
             yield return www.SendWebRequest();
-
-            if (www.result == UnityWebRequest.Result.Success)
-            {
-                Debug.Log($"✅ 준비 상태 변경 성공: {ready}");
-            }
-            else
-            {
-                Debug.LogError("❌ 준비 상태 변경 실패: " + www.downloadHandler.text);
-            }
         }
     }
 
-
-    // **********************************
-    // 3. 게임 시작 및 씬 전환 로직
-    // **********************************
-
     public void OnClickStartGame()
     {
+        Debug.Log("🖱️ [클릭] 시작 버튼 눌림! 서버로 요청 보냄..."); // ★ 이 로그 추가
         StartCoroutine(RequestStartGame(CurrentRoomName));
     }
 
@@ -377,23 +404,15 @@ public class LobbyUI : MonoBehaviour
 
             if (www.result == UnityWebRequest.Result.Success)
             {
-                // 서버에서 게임 시작 승인 -> 씬 전환 실행
                 StartGamePlay();
-            }
-            else
-            {
-                Debug.LogError("❌ 게임 시작 요청 실패: " + www.downloadHandler.text);
             }
         }
     }
 
     public void StartGamePlay()
     {
-        Debug.Log("🎉 LobbyUI: 게임 시작 신호 수신! 씬 전환 실행.");
-
         StopAllCoroutines();
 
-        // SceneDataTransfer 클래스를 사용하여 데이터 전달
         if (SceneDataTransfer.Instance != null && currentPlayers != null)
         {
             SceneDataTransfer.Instance.PlayerNicknames.Clear();
@@ -405,12 +424,7 @@ public class LobbyUI : MonoBehaviour
             }
             SceneDataTransfer.Instance.PlayerNicknames = activeNicknames;
 
-            // 최종: GameScene으로 씬 전환!
             SceneManager.LoadScene(GameSceneName);
-        }
-        else
-        {
-            Debug.LogError("🚨 데이터 전달 실패: SceneDataTransfer 객체 또는 플레이어 정보가 없습니다.");
         }
     }
 }
