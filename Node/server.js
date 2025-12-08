@@ -14,8 +14,8 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const db = mysql.createConnection({
     host: 'localhost',   // DB 주소
     user: 'root',        // MySQL 계정
-    password: '1234',        // 비밀번호 (잠깐 수정함)
-    database: 'test'
+    password: '2316',        // 비밀번호 (잠깐 수정함)
+    database: 'devilrundb'
 });
 
 db.connect(err => {
@@ -74,32 +74,78 @@ app.get('/room_list', (req, res) => {
 // 2. 방 만들기 (POST)
 app.post('/create_room', (req, res) => {
     const { roomName, nickName } = req.body;
+
+    // 메모리에 이미 존재하는지 먼저 체크
     if (rooms[roomName]) {
-        res.json({ success: false, message: "이미 있는 방입니다." });
-    } else {
-        // ★ 새로운 구조: players 배열 안에 nick, isReady, isHost 정보 저장
-        rooms[roomName] = {
-            state: 'waiting',
-            players: [{ nick: nickName, isReady: true, isHost: true }] // 방장은 생성과 동시에 준비 상태
-        };
-        res.json({ success: true, message: "방 생성 완료" });
+        return res.json({ success: false, message: "이미 있는 방입니다." });
     }
+
+    // 1) DB에 방 추가
+    const insertRoomQuery = "INSERT INTO rooms (roomName) VALUES (?)";
+    db.query(insertRoomQuery, [roomName], (err) => {
+        if (err) {
+            console.log(err);
+            return res.json({ success: false, message: "방 생성 실패(DB)" });
+        }
+
+        // 2) DB에 방장 추가
+        const insertPlayerQuery = `
+            INSERT INTO room_players (roomName, nickName, isReady, isHost)
+            VALUES (?, ?, ?, ?)
+        `;
+        db.query(insertPlayerQuery, [roomName, nickName, true, true], (err2) => {
+            if (err2) {
+                console.log(err2);
+                return res.json({ success: false, message: "플레이어 저장 실패" });
+            }
+
+            // 3) Node.js 메모리에 저장 (기존 로직)
+            rooms[roomName] = {
+                state: 'waiting',
+                players: [{ nick: nickName, isReady: true, isHost: true }]
+            };
+
+            res.json({ success: true, message: "방 생성 완료 (DB + 메모리)" });
+        });
+    });
 });
 
 // 3. 방 들어가기 (POST)
 app.post('/join_room', (req, res) => {
     const { roomName, nickName } = req.body;
+
     if (!rooms[roomName]) {
-        res.json({ success: false, message: "없는 방입니다." });
-    } else if (rooms[roomName].players.length >= 3) {
-        res.json({ success: false, message: "방이 꽉 찼습니다." });
-    } else if (rooms[roomName].state !== 'waiting') {
-        res.json({ success: false, message: "게임이 시작된 방입니다." });
-    } else {
-        // ★ 새로운 구조: 일반 플레이어로 추가
-        rooms[roomName].players.push({ nick: nickName, isReady: false, isHost: false });
-        res.json({ success: true, message: "입장 성공" });
+        return res.json({ success: false, message: "없는 방입니다." });
     }
+
+    if (rooms[roomName].players.length >= 3) {
+        return res.json({ success: false, message: "방이 꽉 찼습니다." });
+    }
+
+    if (rooms[roomName].state !== 'waiting') {
+        return res.json({ success: false, message: "게임이 시작된 방입니다." });
+    }
+
+    // DB에도 저장
+    const sql = `
+        INSERT INTO room_players (roomName, nickName, isReady, isHost)
+        VALUES (?, ?, ?, ?)
+    `;
+    db.query(sql, [roomName, nickName, false, false], (err) => {
+        if (err) {
+            console.log(err);
+            return res.json({ success: false, message: "DB 저장 실패" });
+        }
+
+        // 메모리에도 저장
+        rooms[roomName].players.push({
+            nick: nickName,
+            isReady: false,
+            isHost: false
+        });
+
+        res.json({ success: true, message: "입장 성공" });
+    });
 });
 
 // ✅ 서버 실행
@@ -124,30 +170,40 @@ setInterval(() => {
     const now = Date.now();
     
     for (let roomName in rooms) {
-        // ★ 수정: room 변수는 이제 배열이 아니라 객체임
-        let room = rooms[roomName];       
-        let players = room.players; // 실제 플레이어 배열
 
-        // 방에 있는 유저들을 뒤에서부터 검사 (삭제 시 인덱스 꼬임 방지)
+        let room = rooms[roomName];
+        let players = room.players;
+
         for (let i = players.length - 1; i >= 0; i--) {
-            let p = players[i]; // p는 객체 { nick: '...', ... }
-            let nick = p.nick;  // ★ 수정: 객체 안의 nick을 꺼내야 함
-            
-            // 마지막 신호가 4초 이상 지났으면 -> 사망 처리
+            let p = players[i];
+            let nick = p.nick;
+
             if (!lastHeartbeat[nick] || (now - lastHeartbeat[nick] > 4000)) {
                 console.log(`💀 [삭제] ${nick}`);
+
+                // 🔥 DB에서도 삭제
+                const sql = "DELETE FROM room_players WHERE roomName=? AND nickName=?";
+                db.query(sql, [roomName, nick], () => {});
+
                 players.splice(i, 1);
                 delete lastHeartbeat[nick];
             }
         }
 
-        // 유저 다 나가서 방 비었으면 -> 방 삭제
+        // 방에 유저가 0명 → 방 삭제 (DB도 삭제)
         if (players.length === 0) {
             console.log(`🗑 [방 폭파] ${roomName}`);
+
+            // 🔥 DB 방 삭제
+            db.query("DELETE FROM rooms WHERE roomName=?", [roomName], () => {});
+
+            // 🔥 DB room_players도 삭제
+            db.query("DELETE FROM room_players WHERE roomName=?", [roomName], () => {});
+
             delete rooms[roomName];
         }
     }
-}, 2000); // 2초마다 실행
+}, 2000);
 
 // 6. 플레이어 목록 가져오기 (GET) - 대기실 UI 갱신용
 app.get('/room_players', (req, res) => {
@@ -181,12 +237,28 @@ app.post('/toggle_ready', (req, res) => {
 
     const player = rooms[roomName].players.find(p => p.nick === nickName);
 
-    if (player && !player.isHost) { // 방장이 아닌 경우에만 준비 상태 변경 허용
-        player.isReady = isReady;
-        return res.json({ success: true, message: "준비 상태 갱신" });
+    if (player && !player.isHost) {
+
+        // DB UPDATE
+        const sql = `
+            UPDATE room_players 
+            SET isReady = ? 
+            WHERE roomName = ? AND nickName = ?
+        `;
+        db.query(sql, [isReady, roomName, nickName], (err) => {
+            if (err) {
+                console.log(err);
+                return res.json({ success: false, message: "DB 업데이트 실패" });
+            }
+
+            player.isReady = isReady;
+            res.json({ success: true, message: "준비 상태 갱신" });
+        });
+
+        return;
     }
-    
-    return res.json({ success: false, message: "플레이어를 찾을 수 없거나 방장입니다." });
+
+    res.json({ success: false, message: "플레이어를 찾을 수 없거나 방장입니다." });
 });
 
 
@@ -194,21 +266,30 @@ app.post('/toggle_ready', (req, res) => {
 app.post('/start_game', (req, res) => {
     const { roomName } = req.body;
 
-    if (!rooms[roomName] || rooms[roomName].state !== 'waiting') {
+    const room = rooms[roomName];
+
+    if (!room || room.state !== 'waiting') {
         return res.json({ success: false, message: "방이 없거나 이미 시작됨." });
     }
 
-    const players = rooms[roomName].players;
+    const players = room.players;
     const isFull = players.length === 3;
-    const allReady = players.every(p => p.isReady); // 방장은 isReady: true로 설정했으므로 모두 검사
+    const allReady = players.every(p => p.isReady);
 
     if (isFull && allReady) {
-        rooms[roomName].state = 'playing'; // 방 상태를 '게임 중'으로 변경
-        
-        // ★ 실제 서버라면 여기서 모든 클라이언트에게 웹소켓으로 '게임 시작' 신호를 보냅니다.
+
+        // DB UPDATE
+        const sql = "UPDATE rooms SET state = 'playing' WHERE roomName = ?";
+        db.query(sql, [roomName], (err) => {
+            if (err) console.log(err);
+        });
+
+        // 메모리 업데이트
+        room.state = 'playing';
+
         console.log(`🚀 [GAME START] Room: ${roomName}`);
         return res.json({ success: true, message: "게임 시작!" });
-    } else {
-        return res.json({ success: false, message: "인원이 부족하거나 모두 준비되지 않음." });
     }
+
+    res.json({ success: false, message: "인원 부족 또는 준비 안됨." });
 });
