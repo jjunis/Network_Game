@@ -6,3 +6,7 @@ CREATE TABLE room_players (
     isReady BOOLEAN DEFAULT 0,
     isHost BOOLEAN DEFAULT 0
 );
+
+-- 방 플레이어 리스트 삭제
+DELETE FROM `devilrundb`.`room_players` WHERE  `id`=?;
+--(?에 id에 해당하는 숫자 입력 후 선택실행)

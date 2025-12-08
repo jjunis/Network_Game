@@ -5,3 +5,7 @@ CREATE TABLE rooms (
     state VARCHAR(20) NOT NULL DEFAULT 'waiting',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 방 생성 테이블 삭제
+DELETE FROM `devilrundb`.`rooms` WHERE  `id`=?;
+--(?에 id에 해당하는 숫자 입력 후 선택실행)
