@@ -25,7 +25,7 @@ public class LobbyUI : MonoBehaviour
 {
     private const string GameSceneName = "GameScene";
     private const int MAX_PLAYERS = 3;
-    private string serverUrl = "http://localhost:3000";
+    private string serverUrl = "http://192.168.1.104:3000";
 
     public static string CurrentRoomName;
     public static string MyNickName;
