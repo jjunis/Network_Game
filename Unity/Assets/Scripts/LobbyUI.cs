@@ -25,7 +25,7 @@ public class LobbyUI : MonoBehaviour
 {
     private const string GameSceneName = "GameScene";
     private const int MAX_PLAYERS = 3;
-    private string serverUrl = "http://192.168.1.104:3000";
+    private string serverUrl = "http://172.30.1.13:3000";  //김선우 껄로 함
 
     public static string CurrentRoomName;
     public static string MyNickName;

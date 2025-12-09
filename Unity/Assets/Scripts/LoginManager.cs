@@ -10,7 +10,8 @@ public class LoginManager : MonoBehaviour
     public TMP_InputField passwordInput;
     public TMP_Text resultText;
 
-    string serverUrl = "http://localhost:3000";
+    //string serverUrl = "http://localhost:3000";
+    string serverUrl = "http://172.30.1.13:3000";  //¿Ã∞Õµµ
 
     public void OnRegisterClick()
     {
