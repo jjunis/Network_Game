@@ -24,8 +24,8 @@ public class PlayerInfoDataWrapper
 public class LobbyUI : MonoBehaviour
 {
     private const string GameSceneName = "GameScene";
-    private const int MAX_PLAYERS = 3;
-    private string serverUrl = "http://172.30.1.13:3000";  //김선우 껄로 함
+    private const int MAX_PLAYERS = 2;
+    private string serverUrl = "http://172.100.242.217:3000";  //103호 5번자리에서 출력
 
     public static string CurrentRoomName;
     public static string MyNickName;

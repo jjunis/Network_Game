@@ -11,7 +11,7 @@ public class LoginManager : MonoBehaviour
     public TMP_Text resultText;
 
     //string serverUrl = "http://localhost:3000";
-    string serverUrl = "http://172.30.1.13:3000";  //이것도
+    string serverUrl = "http://172.100.242.217:3000";  //103호 5번자리에서 출력
 
     public void OnRegisterClick()
     {

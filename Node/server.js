@@ -293,3 +293,137 @@ app.post('/start_game', (req, res) => {
 
     res.json({ success: false, message: "인원 부족 또는 준비 안됨." });
 });
+
+const gameStates = {}; // roomName → game state
+
+// 게임 상태 초기화
+app.post('/init_game', (req, res) => {
+  const { roomName } = req.body;
+  
+  gameStates[roomName] = {
+    currentTurnIndex: 0,
+    diceValue: 0,
+    playerPositions: {}, // nickName → currentIndex
+    bossPosition: 0,
+    bossActive: false,
+    eliminatedPlayers: [],
+    gameOver: false,
+    winner: null
+  };
+  
+  res.json({ success: true, gameState: gameStates[roomName] });
+});
+
+// 주사위 굴리기 (서버에서 결정!)
+app.post('/roll_dice', (req, res) => {
+  const { roomName } = req.body;
+  
+  if (!gameStates[roomName]) {
+    return res.json({ success: false, error: "Game not found" });
+  }
+  
+  // 서버에서 주사위 굴림 (1~6)
+  const diceValue = Math.floor(Math.random() * 6) + 1;
+  gameStates[roomName].diceValue = diceValue;
+  
+  res.json({ success: true, diceValue: diceValue });
+});
+
+// 플레이어 이동
+app.post('/move_player', (req, res) => {
+  const { roomName, nickName, steps } = req.body;
+  const game = gameStates[roomName];
+  
+  if (!game) {
+    return res.json({ success: false, error: "Game not found" });
+  }
+  
+  // 현재 위치 가져오기
+  if (!game.playerPositions[nickName]) {
+    game.playerPositions[nickName] = 0;
+  }
+  
+  // 새 위치 계산 (61칸)
+  game.playerPositions[nickName] = (game.playerPositions[nickName] + steps) % 61;
+  
+  // 0칸 도달 체크 (승리)
+  let winner = null;
+  if (game.playerPositions[nickName] === 0) {
+    winner = nickName;
+    game.gameOver = true;
+    game.winner = nickName;
+  }
+  
+  res.json({
+    success: true,
+    playerPosition: game.playerPositions[nickName],
+    winner: winner
+  });
+});
+
+// 보스 이동
+app.post('/move_boss', (req, res) => {
+  const { roomName, steps } = req.body;
+  const game = gameStates[roomName];
+  
+  if (!game) {
+    return res.json({ success: false, error: "Game not found" });
+  }
+  
+  game.bossPosition = (game.bossPosition + steps) % 61;
+  
+  // 같은 칸에 있는 플레이어 탈락
+  const caught = [];
+  for (let nickName in game.playerPositions) {
+    if (game.playerPositions[nickName] === game.bossPosition) {
+      game.eliminatedPlayers.push(nickName);
+      caught.push(nickName);
+    }
+  }
+  
+  // 모두 탈락 체크
+  const players = Object.keys(game.playerPositions);
+  const alive = players.filter(p => !game.eliminatedPlayers.includes(p)).length;
+  
+  if (alive === 0) {
+    game.gameOver = true;
+    game.winner = "BOSS";
+  }
+  
+  res.json({
+    success: true,
+    bossPosition: game.bossPosition,
+    caught: caught
+  });
+});
+
+// 게임 상태 조회
+app.get('/game_state', (req, res) => {
+  const { roomName } = req.query;
+  const game = gameStates[roomName];
+  
+  if (!game) {
+    return res.json({ success: false, error: "Game not found" });
+  }
+  
+  res.json({ success: true, gameState: game });
+});
+
+// 턴 진행
+app.post('/next_turn', (req, res) => {
+  const { roomName } = req.body;
+  const game = gameStates[roomName];
+  
+  if (!game) {
+    return res.json({ success: false, error: "Game not found" });
+  }
+  
+  game.currentTurnIndex++;
+  // 플레이어 수에 따라 리셋
+  const players = Object.keys(game.playerPositions);
+  if (game.currentTurnIndex >= players.length) {
+    game.currentTurnIndex = 0;
+  }
+  
+  res.json({ success: true, currentTurn: game.currentTurnIndex });
+});
