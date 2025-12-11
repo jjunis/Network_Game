@@ -273,7 +273,7 @@ app.post('/start_game', (req, res) => {
     }
 
     const players = room.players;
-    const isFull = players.length === 3;
+    const isFull = players.length === 2;
     const allReady = players.every(p => p.isReady);
 
     if (isFull && allReady) {
