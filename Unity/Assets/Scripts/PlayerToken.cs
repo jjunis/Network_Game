@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using System.Collections;
 
 public class PlayerToken : MonoBehaviour
@@ -6,16 +6,16 @@ public class PlayerToken : MonoBehaviour
     public GameBoard gameBoard;
     public int currentIndex = 0;
     public float moveSpeed = 5.0f;
-    public string playerName = "ÇÃ·¹ÀÌ¾î";
+    public string playerName = "í”Œë ˆì´ì–´";
     public bool isEliminated = false;
     public System.Action OnWin;
 
-    private bool hasWon = false;  // ? ÀÌ¹Ì ½Â¸®Çß´ÂÁö È®ÀÎ
+    private bool hasWon = false;
 
     public IEnumerator MoveStepsWithCallback(int stepCount, System.Action onFinish)
     {
         if (isEliminated) { onFinish?.Invoke(); yield break; }
-        if (hasWon) { onFinish?.Invoke(); yield break; }  // ? ÀÌ¹Ì ½Â¸®ÇßÀ¸¸é ¿òÁ÷ÀÌÁö ¾ÊÀ½
+        if (hasWon) { onFinish?.Invoke(); yield break; }
 
         yield return StartCoroutine(MoveRoutine(stepCount));
         onFinish?.Invoke();
@@ -26,16 +26,10 @@ public class PlayerToken : MonoBehaviour
         int targetIndex = currentIndex + stepCount;
         targetIndex %= gameBoard.boardSpaces.Count;
 
+        Debug.Log($"ğŸ® {playerName} ì´ë™ ì‹œì‘: {currentIndex} â†’ {targetIndex} (ì£¼ì‚¬ìœ„: {stepCount})");
+
         while (currentIndex != targetIndex)
         {
-            // ? 0Ä­¿¡ µµ´ŞÇß´ÂÁö ¸Å¹ø È®ÀÎ
-            if (currentIndex == 0 && !hasWon)
-            {
-                hasWon = true;
-                OnWin?.Invoke();
-                yield break;  // ÀÌµ¿ Áß´Ü
-            }
-
             int nextIndex = (currentIndex + 1) % gameBoard.boardSpaces.Count;
             Vector3 targetPos = gameBoard.GetSpacePosition(nextIndex);
 
@@ -49,14 +43,19 @@ public class PlayerToken : MonoBehaviour
             }
             currentIndex = nextIndex;
 
-            // ? 0Ä­¿¡ µµ´ŞÇß´ÂÁö ´Ù½Ã È®ÀÎ
+            Debug.Log($"ğŸ“ {playerName} í˜„ì¬: {currentIndex}");
+
+            // âœ… ì´ë™ì´ ì™„ë£Œëœ í›„ì—ë§Œ 0ì¹¸ ë„ë‹¬ ì²´í¬!
             if (currentIndex == 0 && !hasWon)
             {
                 hasWon = true;
+                Debug.Log($"ğŸ‰ {playerName}ê°€ ì‹œì‘ì ì— ë„ë‹¬! ìŠ¹ë¦¬!");
                 OnWin?.Invoke();
-                yield break;  // ÀÌµ¿ Áß´Ü
+                yield break;
             }
         }
+
+        Debug.Log($"âœ… {playerName} ì´ë™ ì™„ë£Œ: {currentIndex}");
     }
 
     public void Eliminate()
