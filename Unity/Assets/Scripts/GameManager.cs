@@ -19,7 +19,7 @@ public class GameManager : MonoBehaviour
     private int bossActivationThreshold = 15;
     private bool gameOver = false;
 
-    private string serverUrl = "http://172.30.1.13:3000";
+    private string serverUrl = "http://localhost:3000";
     private string currentRoomName;
 
     private void Start()
@@ -27,7 +27,6 @@ public class GameManager : MonoBehaviour
         currentRoomName = LobbyUI.CurrentRoomName;
         Debug.Log($"🎮 게임 시작 - 방: {currentRoomName}");
 
-        // 서버에 게임 초기화
         StartCoroutine(InitializeGameOnServer());
 
         foreach (var player in players)
@@ -36,19 +35,20 @@ public class GameManager : MonoBehaviour
             player.OnWin = OnPlayerWin;
         }
 
-        infoText.text = $"{((PlayerToken)turnOrder[0]).playerName}의 턴! 주사위를 굴려주세요.";
+        if (players.Count > 0)
+        {
+            infoText.text = $"{players[0].playerName}의 턴! 주사위를 굴려주세요.";
+        }
     }
 
     IEnumerator InitializeGameOnServer()
     {
         string playersJson = "[";
-        List<string> playerNames = new List<string>();
-        foreach (var p in players)
+        for (int i = 0; i < players.Count; i++)
         {
-            playerNames.Add(p.playerName);
-            playersJson += "\"" + p.playerName + "\",";
+            playersJson += "\"" + players[i].playerName + "\"";
+            if (i < players.Count - 1) playersJson += ",";
         }
-        if (playersJson.EndsWith(",")) playersJson = playersJson.Substring(0, playersJson.Length - 1);
         playersJson += "]";
 
         string json = "{\"roomName\":\"" + currentRoomName + "\", \"players\":" + playersJson + "}";
@@ -67,6 +67,10 @@ public class GameManager : MonoBehaviour
             {
                 Debug.Log("✅ 서버 게임 초기화 완료");
             }
+            else
+            {
+                Debug.LogError("❌ 초기화 실패: " + www.error);
+            }
         }
     }
 
@@ -76,7 +80,6 @@ public class GameManager : MonoBehaviour
 
         if (isWaitingForDice && Input.GetKeyDown(KeyCode.Space))
         {
-            Debug.Log("🎲 Space 눌림!");
             StartCoroutine(RequestDiceFromServer());
         }
     }
@@ -103,9 +106,13 @@ public class GameManager : MonoBehaviour
 
                 if (diceValue > 0)
                 {
-                    Debug.Log($"✅ 서버 주사위: {diceValue}");
+                    Debug.Log($"✅ 주사위: {diceValue}");
                     yield return StartCoroutine(ProcessTurn(diceValue));
                 }
+            }
+            else
+            {
+                Debug.LogError("❌ 주사위 요청 실패: " + www.error);
             }
         }
 
@@ -114,6 +121,8 @@ public class GameManager : MonoBehaviour
 
     IEnumerator ProcessTurn(int diceValue)
     {
+        if (gameOver) yield break;
+
         object current = turnOrder[currentTurnIndex];
 
         if (current is PlayerToken)
@@ -123,16 +132,14 @@ public class GameManager : MonoBehaviour
             if (!player.isEliminated)
             {
                 infoText.text = $"{player.playerName}의 턴! 주사위: {diceValue}";
+                Debug.Log($"🎮 {player.playerName} 이동 시작");
 
                 bool moveFinished = false;
                 yield return StartCoroutine(player.MoveStepsWithCallback(diceValue, () => moveFinished = true));
                 yield return new WaitUntil(() => moveFinished);
                 yield return new WaitForSeconds(0.5f);
 
-                // 서버에 이동 기록
                 yield return StartCoroutine(NotifyPlayerMove(player.playerName, diceValue));
-
-                // 보스 활성화 확인
                 yield return StartCoroutine(CheckBossActivation());
 
                 if (!bossActive && AllPlayersPassedThreshold())
@@ -145,14 +152,23 @@ public class GameManager : MonoBehaviour
             }
 
             NextTurn();
-            isWaitingForDice = true;
 
-            if (gameOver) yield break;
+            if (gameOver)
+            {
+                Debug.Log("🏁 게임 오버");
+                yield break;
+            }
+
+            isWaitingForDice = true;
 
             if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is BossToken && bossActive)
             {
                 yield return new WaitForSeconds(0.5f);
                 StartCoroutine(ProcessBossTurn());
+            }
+            else
+            {
+                UpdateNextTurnDisplay();
             }
         }
     }
@@ -195,6 +211,8 @@ public class GameManager : MonoBehaviour
 
     IEnumerator ProcessBossTurn()
     {
+        if (gameOver) yield break;
+
         isWaitingForDice = false;
 
         infoText.text = "보스가 주사위를 굴리는 중...";
@@ -206,13 +224,13 @@ public class GameManager : MonoBehaviour
 
         int bossDiceValue = diceReader.GetTopNumber();
         infoText.text = $"보스의 턴! 주사위: {bossDiceValue}";
+        Debug.Log($"🔴 보스 주사위: {bossDiceValue}");
 
         bool moveFinished = false;
         yield return StartCoroutine(boss.MoveStepsWithCallback(bossDiceValue, players, () => moveFinished = true));
         yield return new WaitUntil(() => moveFinished);
         yield return new WaitForSeconds(0.5f);
 
-        // 서버에 보스 이동 기록
         yield return StartCoroutine(NotifyBossMove(bossDiceValue));
 
         int alive = 0;
@@ -220,16 +238,21 @@ public class GameManager : MonoBehaviour
         {
             if (!p.isEliminated) alive++;
         }
+
+        Debug.Log($"👥 살아있는 플레이어: {alive}명");
+
         if (alive == 0)
         {
             infoText.text = "🎮 보스가 모든 플레이어를 잡았습니다! 게임 오버!";
             gameOver = true;
+            Debug.Log("🔴 게임 오버: 보스 승리!");
             yield break;
         }
 
         NextTurn();
         isWaitingForDice = true;
 
+        Debug.Log($"✅ 다음 턴: {currentTurnIndex}");
         UpdateNextTurnDisplay();
     }
 
@@ -256,21 +279,13 @@ public class GameManager : MonoBehaviour
             if (nextTurn is PlayerToken)
             {
                 PlayerToken nextPlayer = (PlayerToken)nextTurn;
-                if (nextPlayer.isEliminated)
-                {
-                    infoText.text = $"{nextPlayer.playerName}는 탈락했습니다!";
-                }
-                else
-                {
-                    infoText.text = $"{nextPlayer.playerName}의 턴! 주사위를 굴려주세요.";
-                }
+                infoText.text = nextPlayer.isEliminated ?
+                    $"{nextPlayer.playerName}는 탈락했습니다!" :
+                    $"{nextPlayer.playerName}의 턴! 주사위를 굴려주세요.";
             }
-            else if (nextTurn is BossToken)
+            else if (nextTurn is BossToken && bossActive)
             {
-                if (bossActive)
-                {
-                    infoText.text = "보스의 턴! (자동 진행 중...)";
-                }
+                infoText.text = "보스의 턴!";
             }
         }
     }
@@ -280,9 +295,7 @@ public class GameManager : MonoBehaviour
         foreach (var player in players)
         {
             if (!player.isEliminated && player.currentIndex < bossActivationThreshold)
-            {
                 return false;
-            }
         }
         return true;
     }
@@ -290,7 +303,6 @@ public class GameManager : MonoBehaviour
     void NextTurn()
     {
         currentTurnIndex++;
-
         if (currentTurnIndex >= turnOrder.Count)
             currentTurnIndex = 0;
 
@@ -314,6 +326,7 @@ public class GameManager : MonoBehaviour
     {
         infoText.text = "🎉 플레이어가 시작점에 도달했습니다! 게임 종료!";
         gameOver = true;
+        Debug.Log("🏁 게임 오버: 플레이어 승리!");
     }
 
     int ExtractIntFromJSON(string json, string key)
@@ -327,9 +340,7 @@ public class GameManager : MonoBehaviour
 
             string valueStr = json.Substring(startIndex, endIndex - startIndex).Trim();
             if (int.TryParse(valueStr, out int value))
-            {
                 return value;
-            }
         }
         catch { }
         return 0;
