@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Networking;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -18,8 +19,17 @@ public class GameManager : MonoBehaviour
     private int bossActivationThreshold = 15;
     private bool gameOver = false;
 
+    private string serverUrl = "http://172.30.1.13:3000";
+    private string currentRoomName;
+
     private void Start()
     {
+        currentRoomName = LobbyUI.CurrentRoomName;
+        Debug.Log($"🎮 게임 시작 - 방: {currentRoomName}");
+
+        // 서버에 게임 초기화
+        StartCoroutine(InitializeGameOnServer());
+
         foreach (var player in players)
         {
             turnOrder.Add(player);
@@ -29,6 +39,37 @@ public class GameManager : MonoBehaviour
         infoText.text = $"{((PlayerToken)turnOrder[0]).playerName}의 턴! 주사위를 굴려주세요.";
     }
 
+    IEnumerator InitializeGameOnServer()
+    {
+        string playersJson = "[";
+        List<string> playerNames = new List<string>();
+        foreach (var p in players)
+        {
+            playerNames.Add(p.playerName);
+            playersJson += "\"" + p.playerName + "\",";
+        }
+        if (playersJson.EndsWith(",")) playersJson = playersJson.Substring(0, playersJson.Length - 1);
+        playersJson += "]";
+
+        string json = "{\"roomName\":\"" + currentRoomName + "\", \"players\":" + playersJson + "}";
+        Debug.Log("📡 서버 게임 초기화: " + json);
+
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/init", "POST"))
+        {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+
+            yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log("✅ 서버 게임 초기화 완료");
+            }
+        }
+    }
+
     private void Update()
     {
         if (gameOver) return;
@@ -36,24 +77,39 @@ public class GameManager : MonoBehaviour
         if (isWaitingForDice && Input.GetKeyDown(KeyCode.Space))
         {
             Debug.Log("🎲 Space 눌림!");
-            StartCoroutine(ProcessDiceRoll());
+            StartCoroutine(RequestDiceFromServer());
         }
     }
 
-    IEnumerator ProcessDiceRoll()
+    IEnumerator RequestDiceFromServer()
     {
         isWaitingForDice = false;
 
-        diceReader.RollDice();
-        Debug.Log("⏳ 주사위 굴러가는 중...");
+        string json = "{\"roomName\":\"" + currentRoomName + "\"}";
 
-        yield return new WaitUntil(() => !diceReader.isRolling);
-        yield return new WaitForSeconds(0.5f);
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/roll_dice", "POST"))
+        {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
 
-        int diceValue = diceReader.GetTopNumber();
-        Debug.Log($"✅ 주사위 결과: {diceValue}");
+            yield return www.SendWebRequest();
 
-        yield return StartCoroutine(ProcessTurn(diceValue));
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                string response = www.downloadHandler.text;
+                int diceValue = ExtractIntFromJSON(response, "diceValue");
+
+                if (diceValue > 0)
+                {
+                    Debug.Log($"✅ 서버 주사위: {diceValue}");
+                    yield return StartCoroutine(ProcessTurn(diceValue));
+                }
+            }
+        }
+
+        isWaitingForDice = true;
     }
 
     IEnumerator ProcessTurn(int diceValue)
@@ -67,21 +123,23 @@ public class GameManager : MonoBehaviour
             if (!player.isEliminated)
             {
                 infoText.text = $"{player.playerName}의 턴! 주사위: {diceValue}";
-                Debug.Log($"🎮 {player.playerName} 이동 시작 (주사위: {diceValue})");
 
                 bool moveFinished = false;
                 yield return StartCoroutine(player.MoveStepsWithCallback(diceValue, () => moveFinished = true));
                 yield return new WaitUntil(() => moveFinished);
                 yield return new WaitForSeconds(0.5f);
 
-                Debug.Log($"✅ {player.playerName} 이동 완료: {player.currentIndex}칸");
+                // 서버에 이동 기록
+                yield return StartCoroutine(NotifyPlayerMove(player.playerName, diceValue));
+
+                // 보스 활성화 확인
+                yield return StartCoroutine(CheckBossActivation());
 
                 if (!bossActive && AllPlayersPassedThreshold())
                 {
                     bossActive = true;
                     turnOrder.Add(boss);
                     infoText.text = "⚠️ 모든 플레이어가 15칸을 지났습니다! 보스가 나타났습니다!";
-                    Debug.Log("🔴 보스 활성화!");
                     yield return new WaitForSeconds(1f);
                 }
             }
@@ -89,21 +147,48 @@ public class GameManager : MonoBehaviour
             NextTurn();
             isWaitingForDice = true;
 
-            if (gameOver)
-            {
-                Debug.Log("🏁 게임 오버!");
-                yield break;
-            }
+            if (gameOver) yield break;
 
             if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is BossToken && bossActive)
             {
-                Debug.Log("🔴 보스 턴 시작");
                 yield return new WaitForSeconds(0.5f);
                 StartCoroutine(ProcessBossTurn());
             }
-            else
+        }
+    }
+
+    IEnumerator NotifyPlayerMove(string playerName, int steps)
+    {
+        string json = "{\"roomName\":\"" + currentRoomName + "\", \"nickName\":\"" + playerName + "\", \"steps\":" + steps + "}";
+
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/move_player", "POST"))
+        {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+
+            yield return www.SendWebRequest();
+        }
+    }
+
+    IEnumerator CheckBossActivation()
+    {
+        string json = "{\"roomName\":\"" + currentRoomName + "\"}";
+
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/check_boss_activation", "POST"))
+        {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+
+            yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
             {
-                UpdateNextTurnDisplay();
+                string response = www.downloadHandler.text;
+                bossActive = response.Contains("\"bossActive\":true");
             }
         }
     }
@@ -113,8 +198,6 @@ public class GameManager : MonoBehaviour
         isWaitingForDice = false;
 
         infoText.text = "보스가 주사위를 굴리는 중...";
-        Debug.Log("⏳ 보스 주사위 굴러가는 중...");
-
         yield return new WaitForSeconds(1f);
 
         diceReader.RollDice();
@@ -122,8 +205,6 @@ public class GameManager : MonoBehaviour
         yield return new WaitForSeconds(0.5f);
 
         int bossDiceValue = diceReader.GetTopNumber();
-        Debug.Log($"✅ 보스 주사위 결과: {bossDiceValue}");
-
         infoText.text = $"보스의 턴! 주사위: {bossDiceValue}";
 
         bool moveFinished = false;
@@ -131,29 +212,40 @@ public class GameManager : MonoBehaviour
         yield return new WaitUntil(() => moveFinished);
         yield return new WaitForSeconds(0.5f);
 
-        Debug.Log($"🔴 보스 이동 완료: {boss.currentIndex}칸");
+        // 서버에 보스 이동 기록
+        yield return StartCoroutine(NotifyBossMove(bossDiceValue));
 
         int alive = 0;
         foreach (var p in players)
         {
             if (!p.isEliminated) alive++;
         }
-
-        Debug.Log($"👥 살아있는 플레이어: {alive}명");
-
         if (alive == 0)
         {
             infoText.text = "🎮 보스가 모든 플레이어를 잡았습니다! 게임 오버!";
             gameOver = true;
-            Debug.Log("🏁 게임 오버: 보스 승리!");
             yield break;
         }
 
         NextTurn();
         isWaitingForDice = true;
 
-        Debug.Log($"✅ 다음 턴으로 진행 (currentTurnIndex: {currentTurnIndex})");
         UpdateNextTurnDisplay();
+    }
+
+    IEnumerator NotifyBossMove(int steps)
+    {
+        string json = "{\"roomName\":\"" + currentRoomName + "\", \"steps\":" + steps + "}";
+
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/move_boss", "POST"))
+        {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+
+            yield return www.SendWebRequest();
+        }
     }
 
     void UpdateNextTurnDisplay()
@@ -189,11 +281,9 @@ public class GameManager : MonoBehaviour
         {
             if (!player.isEliminated && player.currentIndex < bossActivationThreshold)
             {
-                Debug.Log($"📍 {player.playerName}: {player.currentIndex}칸 (15칸 미만)");
                 return false;
             }
         }
-        Debug.Log("✅ 모든 플레이어가 15칸 이상!");
         return true;
     }
 
@@ -224,6 +314,24 @@ public class GameManager : MonoBehaviour
     {
         infoText.text = "🎉 플레이어가 시작점에 도달했습니다! 게임 종료!";
         gameOver = true;
-        Debug.Log("🏁 게임 오버: 플레이어 승리!");
+    }
+
+    int ExtractIntFromJSON(string json, string key)
+    {
+        try
+        {
+            string searchKey = "\"" + key + "\":";
+            int startIndex = json.IndexOf(searchKey) + searchKey.Length;
+            int endIndex = json.IndexOf(",", startIndex);
+            if (endIndex == -1) endIndex = json.IndexOf("}", startIndex);
+
+            string valueStr = json.Substring(startIndex, endIndex - startIndex).Trim();
+            if (int.TryParse(valueStr, out int value))
+            {
+                return value;
+            }
+        }
+        catch { }
+        return 0;
     }
 }
