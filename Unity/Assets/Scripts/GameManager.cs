@@ -22,6 +22,10 @@ public class GameManager : MonoBehaviour
     private string roomName;
     private string myPlayerName;
 
+    // ✅ 동기화 상태
+    private int lastSyncedDice = 0;
+    private Dictionary<string, int> lastSyncedPositions = new Dictionary<string, int>();
+
     void Start()
     {
         roomName = LobbyUI.CurrentRoomName;
@@ -34,10 +38,11 @@ public class GameManager : MonoBehaviour
         {
             turnOrder.Add(p);
             p.OnWin = () => OnWin();
+            lastSyncedPositions[p.playerName] = 0;
         }
 
-        // ✅ 백그라운드 동기화만 (실제 진행은 로컬에서)
-        StartCoroutine(BackgroundSync());
+        // ✅ 지속적인 동기화 (0.2초마다)
+        StartCoroutine(ContinuousSyncGameState());
 
         UpdateUI();
     }
@@ -69,19 +74,15 @@ public class GameManager : MonoBehaviour
                 isPlayerTurn = true;
                 UpdateUI();
             }
-            else
-            {
-                Debug.LogError("❌ 초기화 실패: " + www.error);
-            }
         }
     }
 
-    // ✅ 백그라운드에서 0.5초마다 다른 플레이어 위치만 동기화
-    IEnumerator BackgroundSync()
+    // ✅ 지속적인 동기화: 0.2초마다 서버 상태 확인
+    IEnumerator ContinuousSyncGameState()
     {
         while (!gameOver)
         {
-            yield return new WaitForSeconds(0.5f);
+            yield return new WaitForSeconds(0.2f);
 
             string url = $"{serverUrl}/game/state?roomName={roomName}";
 
@@ -91,35 +92,66 @@ public class GameManager : MonoBehaviour
 
                 if (www.result == UnityWebRequest.Result.Success)
                 {
-                    SyncOtherPlayers(www.downloadHandler.text);
+                    SyncGameStateFromServer(www.downloadHandler.text);
                 }
             }
         }
     }
 
-    // ✅ 다른 플레이어들의 위치만 동기화 (자신은 제외)
-    void SyncOtherPlayers(string json)
+    // ✅ 서버에서 받은 상태를 로컬에 동기화
+    void SyncGameStateFromServer(string json)
     {
         try
         {
+            // 1️⃣ 모든 플레이어 위치 동기화
             foreach (var player in players)
             {
-                // 자신은 제외
-                if (player.playerName == myPlayerName) continue;
-
                 int serverPos = ExtractIntFromJson(json, $"\"{player.playerName}\":", ",");
-                if (serverPos >= 0 && player.currentIndex != serverPos)
+                if (serverPos >= 0)
                 {
-                    player.currentIndex = serverPos;
-                    Debug.Log($"🔄 {player.playerName}: {serverPos}칸");
+                    if (!lastSyncedPositions.ContainsKey(player.playerName))
+                    {
+                        lastSyncedPositions[player.playerName] = serverPos;
+                    }
+
+                    // 서버 위치가 변경되면 업데이트
+                    if (lastSyncedPositions[player.playerName] != serverPos)
+                    {
+                        player.currentIndex = serverPos;
+                        lastSyncedPositions[player.playerName] = serverPos;
+                        Debug.Log($"🔄 동기화: {player.playerName} → {serverPos}칸");
+                    }
                 }
             }
 
-            // 보스 위치 동기화
+            // 2️⃣ 보스 위치 동기화
             int bosPos = ExtractIntFromJson(json, "\"bossPosition\":", ",");
             if (bosPos >= 0 && boss.currentIndex != bosPos)
             {
                 boss.currentIndex = bosPos;
+                Debug.Log($"🔄 보스 동기화 → {bosPos}칸");
+            }
+
+            // 3️⃣ 보스 활성화 동기화
+            bool serverBossActive = json.Contains("\"bossActive\":true");
+            if (serverBossActive && !bossActive)
+            {
+                bossActive = true;
+                Debug.Log("🔴 보스 활성화 동기화");
+            }
+
+            // 4️⃣ 탈락 플레이어 동기화
+            if (json.Contains("eliminatedPlayers"))
+            {
+                foreach (var player in players)
+                {
+                    if (json.Contains($"\"{player.playerName}\"") && !player.isEliminated)
+                    {
+                        // 간단한 확인 (더 정교한 파싱 필요할 수 있음)
+                        player.isEliminated = true;
+                        Debug.Log($"❌ {player.playerName} 탈락 동기화");
+                    }
+                }
             }
         }
         catch (System.Exception e)
@@ -179,11 +211,34 @@ public class GameManager : MonoBehaviour
         int diceValue = diceReader.GetTopNumber();
         Debug.Log($"🎲 주사위: {diceValue}");
 
+        // ✅ 서버에 주사위 값 전송
+        yield return StartCoroutine(SendDiceRoll(diceValue));
+
         infoText.text = $"🎲 주사위: {diceValue}";
         yield return new WaitForSeconds(0.5f);
 
         // 2️⃣ 플레이어 이동
         yield return StartCoroutine(ProcessPlayerTurn(diceValue));
+    }
+
+    // ✅ 서버에 주사위 값 전송
+    IEnumerator SendDiceRoll(int diceValue)
+    {
+        string json = "{\"roomName\":\"" + roomName + "\",\"diceValue\":" + diceValue + "}";
+
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/roll_dice", "POST"))
+        {
+            byte[] body = System.Text.Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(body);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+            yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log("📡 주사위 값 서버에 전송");
+            }
+        }
     }
 
     IEnumerator ProcessPlayerTurn(int dice)
@@ -201,7 +256,7 @@ public class GameManager : MonoBehaviour
                 infoText.text = $"{p.playerName} 이동 중... (주사위: {dice})";
                 Debug.Log($"🎮 {p.playerName} 이동 시작");
 
-                // 3️⃣ 로컬에서 이동
+                // 로컬에서 이동
                 bool done = false;
                 StartCoroutine(p.MoveStepsWithCallback(dice, () => done = true));
                 yield return new WaitUntil(() => done);
@@ -209,10 +264,13 @@ public class GameManager : MonoBehaviour
 
                 Debug.Log($"✅ {p.playerName} 이동 완료: {p.currentIndex}칸");
 
-                // 4️⃣ 서버에 이동 정보 전송
+                // ✅ 서버에 이동 정보 전송
                 yield return StartCoroutine(SendPlayerMove(p.playerName, dice));
 
-                // 5️⃣ 보스 활성화 체크
+                // 0.5초 대기 (동기화 시간)
+                yield return new WaitForSeconds(0.5f);
+
+                // 보스 활성화 체크
                 yield return StartCoroutine(CheckBossActivate());
 
                 if (!bossActive && AllPlayersOver15())
@@ -225,12 +283,12 @@ public class GameManager : MonoBehaviour
                 }
             }
 
-            // 6️⃣ 다음 턴
+            // 다음 턴
             NextTurn();
 
             if (gameOver) yield break;
 
-            // 7️⃣ 보스 턴이면
+            // 보스 턴이면
             if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is BossToken && bossActive)
             {
                 Debug.Log("🔴 보스 턴!");
@@ -239,7 +297,7 @@ public class GameManager : MonoBehaviour
             }
             else
             {
-                // 8️⃣ 플레이어 턴으로
+                // 플레이어 턴으로
                 isPlayerTurn = true;
                 UpdateUI();
             }
@@ -260,7 +318,7 @@ public class GameManager : MonoBehaviour
 
             if (www.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log("✅ 서버에 전송");
+                Debug.Log("✅ 서버에 이동 정보 전송");
             }
         }
     }
@@ -280,7 +338,10 @@ public class GameManager : MonoBehaviour
             if (www.result == UnityWebRequest.Result.Success)
             {
                 bool active = www.downloadHandler.text.Contains("\"bossActive\":true");
-                if (active) bossActive = true;
+                if (active && !bossActive)
+                {
+                    bossActive = true;
+                }
             }
         }
     }
@@ -308,6 +369,8 @@ public class GameManager : MonoBehaviour
         yield return new WaitForSeconds(0.4f);
 
         yield return StartCoroutine(SendBossMove(bossDice));
+
+        yield return new WaitForSeconds(0.5f);
 
         int alive = 0;
         foreach (var p in players)
@@ -347,6 +410,11 @@ public class GameManager : MonoBehaviour
             www.downloadHandler = new DownloadHandlerBuffer();
             www.SetRequestHeader("Content-Type", "application/json");
             yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log("✅ 보스 이동 전송");
+            }
         }
     }
 
