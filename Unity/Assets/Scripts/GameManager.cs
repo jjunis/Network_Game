@@ -18,7 +18,7 @@ public class GameManager : MonoBehaviour
     private bool bossActive = false;
     private bool gameOver = false;
 
-    private string serverUrl = "http://172.100.242.217:3000";  // ✅ 수정
+    private string serverUrl = "http://172.100.242.217:3000";
     private string roomName;
     private string myPlayerName;
 
@@ -36,8 +36,8 @@ public class GameManager : MonoBehaviour
             p.OnWin = () => OnWin();
         }
 
-        // ✅ 실시간 동기화: 0.3초마다
-        StartCoroutine(RealTimeSyncGameState());
+        // ✅ 백그라운드 동기화만 (실제 진행은 로컬에서)
+        StartCoroutine(BackgroundSync());
 
         UpdateUI();
     }
@@ -53,7 +53,7 @@ public class GameManager : MonoBehaviour
         plist += "]";
 
         string json = "{\"roomName\":\"" + roomName + "\",\"players\":" + plist + "}";
-        Debug.Log("📡 게임 초기화 요청: " + json);
+        Debug.Log("📡 게임 초기화 요청");
 
         using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/init", "POST"))
         {
@@ -69,15 +69,19 @@ public class GameManager : MonoBehaviour
                 isPlayerTurn = true;
                 UpdateUI();
             }
+            else
+            {
+                Debug.LogError("❌ 초기화 실패: " + www.error);
+            }
         }
     }
 
-    // ✅ 실시간 동기화
-    IEnumerator RealTimeSyncGameState()
+    // ✅ 백그라운드에서 0.5초마다 다른 플레이어 위치만 동기화
+    IEnumerator BackgroundSync()
     {
         while (!gameOver)
         {
-            yield return new WaitForSeconds(0.2f);  // 0.2초마다 동기화
+            yield return new WaitForSeconds(0.5f);
 
             string url = $"{serverUrl}/game/state?roomName={roomName}";
 
@@ -87,20 +91,22 @@ public class GameManager : MonoBehaviour
 
                 if (www.result == UnityWebRequest.Result.Success)
                 {
-                    SyncAllGameState(www.downloadHandler.text);
+                    SyncOtherPlayers(www.downloadHandler.text);
                 }
             }
         }
     }
 
-    // ✅ 모든 상태 동기화
-    void SyncAllGameState(string json)
+    // ✅ 다른 플레이어들의 위치만 동기화 (자신은 제외)
+    void SyncOtherPlayers(string json)
     {
         try
         {
-            // 1️⃣ 플레이어 위치 동기화
             foreach (var player in players)
             {
+                // 자신은 제외
+                if (player.playerName == myPlayerName) continue;
+
                 int serverPos = ExtractIntFromJson(json, $"\"{player.playerName}\":", ",");
                 if (serverPos >= 0 && player.currentIndex != serverPos)
                 {
@@ -109,19 +115,11 @@ public class GameManager : MonoBehaviour
                 }
             }
 
-            // 2️⃣ 보스 위치 동기화
+            // 보스 위치 동기화
             int bosPos = ExtractIntFromJson(json, "\"bossPosition\":", ",");
             if (bosPos >= 0 && boss.currentIndex != bosPos)
             {
                 boss.currentIndex = bosPos;
-            }
-
-            // 3️⃣ 보스 활성화 동기화
-            bool serverBossActive = json.Contains("\"bossActive\":true");
-            if (serverBossActive && !bossActive)
-            {
-                bossActive = true;
-                infoText.text = "⚠️ 보스 등장!";
             }
         }
         catch (System.Exception e)
@@ -149,6 +147,7 @@ public class GameManager : MonoBehaviour
     {
         if (gameOver) return;
 
+        // ✅ Space 키로 주사위 굴리기
         if (isPlayerTurn && Input.GetKeyDown(KeyCode.Space))
         {
             if (turnOrder.Count > currentTurnIndex && turnOrder[currentTurnIndex] is PlayerToken)
@@ -156,48 +155,35 @@ public class GameManager : MonoBehaviour
                 PlayerToken currentPlayer = (PlayerToken)turnOrder[currentTurnIndex];
                 if (currentPlayer.playerName == myPlayerName)
                 {
-                    Debug.Log("🎲 자신의 턴!");
-                    StartCoroutine(RequestDiceAndRoll());
+                    Debug.Log("🎲 자신의 턴 - 주사위 굴리기!");
+                    StartCoroutine(RollDiceAndMove());
+                }
+                else
+                {
+                    Debug.Log($"⏳ {currentPlayer.playerName}의 턴 - 기다리는 중...");
                 }
             }
         }
     }
 
-    IEnumerator RequestDiceAndRoll()
+    // ✅ 주사위 굴리고 이동
+    IEnumerator RollDiceAndMove()
     {
         isPlayerTurn = false;
 
-        string json = "{\"roomName\":\"" + roomName + "\"}";
-        int serverDiceValue = 0;
-
-        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/roll_dice", "POST"))
-        {
-            byte[] body = System.Text.Encoding.UTF8.GetBytes(json);
-            www.uploadHandler = new UploadHandlerRaw(body);
-            www.downloadHandler = new DownloadHandlerBuffer();
-            www.SetRequestHeader("Content-Type", "application/json");
-            yield return www.SendWebRequest();
-
-            if (www.result == UnityWebRequest.Result.Success)
-            {
-                serverDiceValue = GetInt(www.downloadHandler.text, "diceValue");
-            }
-        }
-
-        if (serverDiceValue <= 0)
-        {
-            isPlayerTurn = true;
-            yield break;
-        }
-
-        // ✅ UI에 주사위 표시 (서버에서 받은 값)
-        infoText.text = $"🎲 주사위: {serverDiceValue}";
-
+        // 1️⃣ 주사위 굴리기 (로컬)
+        infoText.text = "주사위 굴리는 중...";
         diceReader.RollDice();
         yield return new WaitUntil(() => !diceReader.isRolling);
+
+        int diceValue = diceReader.GetTopNumber();
+        Debug.Log($"🎲 주사위: {diceValue}");
+
+        infoText.text = $"🎲 주사위: {diceValue}";
         yield return new WaitForSeconds(0.5f);
 
-        yield return StartCoroutine(ProcessPlayerTurn(serverDiceValue));
+        // 2️⃣ 플레이어 이동
+        yield return StartCoroutine(ProcessPlayerTurn(diceValue));
     }
 
     IEnumerator ProcessPlayerTurn(int dice)
@@ -213,38 +199,47 @@ public class GameManager : MonoBehaviour
             if (!p.isEliminated)
             {
                 infoText.text = $"{p.playerName} 이동 중... (주사위: {dice})";
+                Debug.Log($"🎮 {p.playerName} 이동 시작");
 
+                // 3️⃣ 로컬에서 이동
                 bool done = false;
                 StartCoroutine(p.MoveStepsWithCallback(dice, () => done = true));
                 yield return new WaitUntil(() => done);
                 yield return new WaitForSeconds(0.3f);
 
-                // ✅ 서버에 이동 전송
+                Debug.Log($"✅ {p.playerName} 이동 완료: {p.currentIndex}칸");
+
+                // 4️⃣ 서버에 이동 정보 전송
                 yield return StartCoroutine(SendPlayerMove(p.playerName, dice));
 
-                yield return new WaitForSeconds(0.3f);
+                // 5️⃣ 보스 활성화 체크
+                yield return StartCoroutine(CheckBossActivate());
 
                 if (!bossActive && AllPlayersOver15())
                 {
                     bossActive = true;
                     turnOrder.Add(boss);
-                    infoText.text = "⚠️ 모든 플레이어가 15칸 이상!";
+                    infoText.text = "⚠️ 모든 플레이어가 15칸 이상! 보스 등장!";
+                    Debug.Log("🔴 보스 활성화!");
                     yield return new WaitForSeconds(1f);
                 }
             }
 
+            // 6️⃣ 다음 턴
             NextTurn();
-            yield return StartCoroutine(UpdateServerTurn());
 
             if (gameOver) yield break;
 
+            // 7️⃣ 보스 턴이면
             if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is BossToken && bossActive)
             {
+                Debug.Log("🔴 보스 턴!");
                 yield return new WaitForSeconds(0.5f);
                 StartCoroutine(ProcessBossTurn());
             }
             else
             {
+                // 8️⃣ 플레이어 턴으로
                 isPlayerTurn = true;
                 UpdateUI();
             }
@@ -262,20 +257,31 @@ public class GameManager : MonoBehaviour
             www.downloadHandler = new DownloadHandlerBuffer();
             www.SetRequestHeader("Content-Type", "application/json");
             yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log("✅ 서버에 전송");
+            }
         }
     }
 
-    IEnumerator UpdateServerTurn()
+    IEnumerator CheckBossActivate()
     {
         string json = "{\"roomName\":\"" + roomName + "\"}";
 
-        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/next_turn", "POST"))
+        using (UnityWebRequest www = new UnityWebRequest(serverUrl + "/game/check_boss", "POST"))
         {
             byte[] body = System.Text.Encoding.UTF8.GetBytes(json);
             www.uploadHandler = new UploadHandlerRaw(body);
             www.downloadHandler = new DownloadHandlerBuffer();
             www.SetRequestHeader("Content-Type", "application/json");
             yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                bool active = www.downloadHandler.text.Contains("\"bossActive\":true");
+                if (active) bossActive = true;
+            }
         }
     }
 
@@ -284,19 +290,22 @@ public class GameManager : MonoBehaviour
         if (gameOver) yield break;
 
         isPlayerTurn = false;
+
         infoText.text = "🔴 보스 턴!";
-        yield return new WaitForSeconds(1f);
+        yield return new WaitForSeconds(0.8f);
 
         diceReader.RollDice();
         yield return new WaitUntil(() => !diceReader.isRolling);
         yield return new WaitForSeconds(0.4f);
 
         int bossDice = diceReader.GetTopNumber();
+        Debug.Log($"✅ 보스 주사위: {bossDice}");
         infoText.text = $"🔴 보스 이동... (주사위: {bossDice})";
 
         bool done = false;
         StartCoroutine(boss.MoveStepsWithCallback(bossDice, players, () => done = true));
         yield return new WaitUntil(() => done);
+        yield return new WaitForSeconds(0.4f);
 
         yield return StartCoroutine(SendBossMove(bossDice));
 
@@ -308,16 +317,23 @@ public class GameManager : MonoBehaviour
 
         if (alive == 0)
         {
-            infoText.text = "🔴 보스 승리!";
+            infoText.text = "🔴 보스가 모든 플레이어를 잡았습니다!";
             gameOver = true;
             yield break;
         }
 
         NextTurn();
-        yield return StartCoroutine(UpdateServerTurn());
 
-        isPlayerTurn = true;
-        UpdateUI();
+        if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is PlayerToken)
+        {
+            isPlayerTurn = true;
+            UpdateUI();
+        }
+        else if (currentTurnIndex < turnOrder.Count && turnOrder[currentTurnIndex] is BossToken && bossActive)
+        {
+            yield return new WaitForSeconds(0.5f);
+            StartCoroutine(ProcessBossTurn());
+        }
     }
 
     IEnumerator SendBossMove(int steps)
