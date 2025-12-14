@@ -29,6 +29,7 @@ public class LobbyUI : MonoBehaviour
 
     public static string CurrentRoomName;
     public static string MyNickName;
+    public static string CurrentPlayerName;  // ✅ 추가!
     public static bool IsHost = false;
     private bool isPlayerReady = false;
     private PlayerInfoData[] currentPlayers;
@@ -423,6 +424,10 @@ public class LobbyUI : MonoBehaviour
                 activeNicknames.Add(pInfo.nickName);
             }
             SceneDataTransfer.Instance.PlayerNicknames = activeNicknames;
+
+            // ✅ 추가: 현재 플레이어 이름 저장
+            CurrentPlayerName = MyNickName;
+            Debug.Log($"📌 현재 플레이어: {CurrentPlayerName}");
 
             SceneManager.LoadScene(GameSceneName);
         }
