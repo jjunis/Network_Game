@@ -2,46 +2,46 @@
 
 public class DiceReader : MonoBehaviour
 {
-    public Transform top;       //2
-    public Transform bottom;    //5
-    public Transform front;     //1
-    public Transform back;      //6
-    public Transform left;      //4
-    public Transform right;     //3
+    public Transform top;
+    public Transform bottom;
+    public Transform front;
+    public Transform back;
+    public Transform left;
+    public Transform right;
 
     private Rigidbody rb;
     public bool isRolling = false;
+    private int lastNumber = 1;
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
-    }
-
-    // 아래 Update() 함수 전체를 주석 처리
-    /*
-    void Update()
-    {
-        // 스페이스 누르면 주사위 굴림
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (rb == null)
         {
-            RollDice();
+            Debug.LogError("❌ DiceReader: Rigidbody 없음!");
         }
     }
-    */
 
-    // ============================
-    //      주사위를 굴리는 함수
-    // ============================
     public void RollDice()
     {
-        if (isRolling) return;
-        isRolling = true;
+        if (isRolling)
+        {
+            Debug.LogWarning("⚠️ 이미 주사위가 굴러가는 중");
+            return;
+        }
 
-        // 속도 초기화
+        if (rb == null)
+        {
+            Debug.LogError("❌ Rigidbody 없음");
+            return;
+        }
+
+        isRolling = true;
+        Debug.Log("⏳ 주사위 굴러가는 중...");
+
         rb.velocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        // 힘 + 회전
         rb.AddForce(new Vector3(
             Random.Range(-3f, 3f),
             Random.Range(7f, 10f),
@@ -54,7 +54,7 @@ public class DiceReader : MonoBehaviour
             Random.Range(-20f, 20f)
         ), ForceMode.Impulse);
 
-        // 멈췄는지 체크 시작
+        CancelInvoke(nameof(CheckStop));
         InvokeRepeating(nameof(CheckStop), 0.5f, 0.1f);
     }
 
@@ -66,15 +66,19 @@ public class DiceReader : MonoBehaviour
             isRolling = false;
 
             int number = GetTopNumber();
-            Debug.Log("🎲 윗면 숫자 : " + number);
+            lastNumber = number;
+            Debug.Log($"✅ 주사위 멈춤! 숫자: {number}");
         }
     }
 
-    // ============================
-    //      윗면 숫자 계산
-    // ============================
     public int GetTopNumber()
     {
+        if (isRolling)
+        {
+            Debug.LogWarning("⚠️ 주사위가 여전히 굴러가는 중!");
+            return lastNumber;
+        }
+
         Transform[] faces = { front, top, right, left, bottom, back };
         float maxDot = -999f;
         int result = -1;
@@ -83,8 +87,16 @@ public class DiceReader : MonoBehaviour
 
         for (int i = 0; i < faces.Length; i++)
         {
-            Vector3 dir = faces[i].transform.forward;
+            if (faces[i] == null)
+            {
+                Debug.LogError($"❌ faces[{i}] null!");
+                continue;
+            }
+
+            Vector3 dir = faces[i].forward;
             float dot = Vector3.Dot(dir, up);
+
+            Debug.Log($"📍 Face {i}: dot={dot:F2}");
 
             if (dot > maxDot)
             {
@@ -93,6 +105,7 @@ public class DiceReader : MonoBehaviour
             }
         }
 
-        return result;
+        Debug.Log($"✅ 계산된 주사위 값: {result} (maxDot={maxDot:F2})");
+        return result > 0 ? result : lastNumber;
     }
 }
