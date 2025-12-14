@@ -12,3 +12,5 @@ CREATE TABLE users (
 -- 플레이어 삭제
 DELETE FROM users WHERE username = 'Test'
 
+- 플레이어 삭제
+DELETE FROM `devilrundb`.`users` WHERE  `id`=3;

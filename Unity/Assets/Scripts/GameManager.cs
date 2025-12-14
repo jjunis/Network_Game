@@ -20,7 +20,8 @@ public class GameManager : MonoBehaviour
     private bool gameOver = false;
 
     // ★ 서버 URL
-    private string serverUrl = "http://172.30.1.13:3000";
+    //private string serverUrl = "http://172.30.1.13:3000";
+    private string serverUrl = "http://localhost:3000";
     private string currentRoomName;
 
     private void Start()

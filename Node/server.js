@@ -27,16 +27,29 @@ db.connect(err => {
 app.post('/register', (req, res) => {
     const { username, password } = req.body;
 
+    const successMsg = '회원가입 성공';
+    const failMsg = '이미 존재하거나 오류';
+
     db.query(
         'INSERT INTO users (username, password) VALUES (?, ?)',
         [username, password],
         (err, result) => {
             if (err) {
-                console.log(err);
-                res.json({ success: false, message: '이미 존재하거나 오류' });
-            } else {
-                res.json({ success: true, message: '회원가입 성공' });
+                // ❌ 실패 로그
+                console.log(`❌ 회원가입 실패: ${username} (${failMsg})`);
+                return res.json({
+                    success: false,
+                    message: failMsg
+                });
             }
+
+            // ✅ 성공 로그 (괄호 포함)
+            console.log(`✅ 회원가입 성공: ${username} (${successMsg})`);
+
+            res.json({
+                success: true,
+                message: successMsg
+            });
         }
     );
 });
@@ -49,11 +62,23 @@ app.post('/login', (req, res) => {
         'SELECT * FROM users WHERE username=? AND password=?',
         [username, password],
         (err, results) => {
-            if (err) throw err;
+            if (err) {
+                console.log('❌ 로그인 오류:', err);
+                return res.json({ success: false, message: '서버 오류' });
+            }
+
             if (results.length > 0) {
-                res.json({ success: true, message: '로그인 성공' });
+                console.log(`✅ 로그인 성공: ${username}`);
+                res.json({
+                    success: true,
+                    message: '로그인 성공'
+                });
             } else {
-                res.json({ success: false, message: '아이디나 비밀번호가 틀림' });
+                console.log(`❌ 로그인 실패: ${username} (아이디나 비밀번호 틀림) `);
+                res.json({
+                    success: false,
+                    message: '아이디나 비밀번호가 틀림'
+                });
             }
         }
     );
