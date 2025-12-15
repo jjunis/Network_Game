@@ -14,7 +14,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const db = mysql.createConnection({
     host: 'localhost',   // DB 주소
     user: 'root',        // MySQL 계정
-    password: '2316',        // 비밀번호 (잠깐 수정함)
+    password: '112233',        // 비밀번호 (잠깐 수정함)
     database: 'devilrundb'
 });
 
