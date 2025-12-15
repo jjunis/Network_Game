@@ -19,8 +19,9 @@ public class GameManager : MonoBehaviour
     private int bossActivationThreshold = 15;
     private bool gameOver = false;
 
-    private string serverUrl = "http://172.16.5.84:3000";
+    //private string serverUrl = "http://172.16.5.84:3000"; //103 5번자리
     //private string serverUrl = "http://localhost:3000";
+    private string serverUrl = "http://172.16.5.59:3000";   //103 교수님자리
     private string currentRoomName;
 
     private void Start()
