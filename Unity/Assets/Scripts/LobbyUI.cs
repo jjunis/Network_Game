@@ -27,7 +27,7 @@ public class LobbyUI : MonoBehaviour
     private const int MAX_PLAYERS = 2;
     //private string serverUrl = "http://172.16.5.84:3000";  //103호 5번자리에서 출력
     //private string serverUrl = "http://localhost:3000";
-    private string serverUrl = "http://172.16.5.59:3000";
+    private string serverUrl = "http://172.16.5.59:3000";   //103호 교수님 자리
 
     public static string CurrentRoomName;
     public static string MyNickName;
